@@ -1,0 +1,39 @@
+# Sin esto, el build copiaría node_modules compilados para Windows dentro de
+# la imagen Linux (el motor de Prisma no cargaría) y builds obsoletos que
+# pisarían a los recién generados.
+node_modules
+**/node_modules
+
+# Artefactos de compilación: se regeneran dentro de la imagen.
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+
+# Secretos: nunca deben entrar en la imagen.
+.env
+.env.*
+!.env.example
+
+# Control de versiones y herramientas
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+
+# Datos locales y registros
+data
+*.log
+npm-debug.log*
+coverage
+
+# Documentación y archivos que no afectan al build
+*.md
+!README.md
+docker-compose.yml
+n8n
+supabase-setup.sql

@@ -161,6 +161,25 @@ curl -X POST https://crm.tudominio.com/api/cobranza/procesar \
 
 ---
 
+## El contenedor se reinicia en bucle
+
+**Mira los logs del servicio** — desde la versión actual, el arranque dice
+exactamente qué falta. Busca una línea que empiece con `✗ ERROR:`.
+
+Los mensajes posibles y su solución:
+
+| Mensaje en el log | Solución |
+|---|---|
+| `falta la variable DATABASE_URL` | Defínela en Environment. Es la cadena del **pooler** (puerto 6543) con `?pgbouncer=true`. |
+| `falta la variable JWT_SECRET` | Defínela en Environment (cualquier cadena aleatoria larga). |
+| `fallaron las migraciones` | La causa más común: aplicaste `supabase-setup.sql` a mano y no corriste `npm run prisma:resolve`. También revisa que `DATABASE_URL` sea correcta. |
+| `el backend terminó durante el arranque` | Justo encima aparece la lista de variables obligatorias que faltan. |
+| `el backend no respondió tras 80 segundos` | Normalmente es la base de datos: la conexión se queda colgada. Verifica que Supabase acepte conexiones desde el servidor. |
+
+Si el sistema arranca pero avisa de variables **recomendadas** que faltan, no es
+un error: el panel funciona, pero esas funciones concretas fallarán al usarse
+(por ejemplo, sin `SUPABASE_URL` no se pueden subir documentos).
+
 ## Problemas frecuentes
 
 | Síntoma | Causa y solución |
