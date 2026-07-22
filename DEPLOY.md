@@ -4,29 +4,22 @@ Todo el sistema va en **un solo servicio**. La imagen incluye backend y panel:
 Next.js sirve la interfaz y reenvía `/api` al backend interno, así que sólo se
 expone un puerto y no hay que configurar URLs cruzadas.
 
-La base de datos y el almacenamiento son de Supabase — no hay que levantar
-Postgres ni MinIO.
-
 ---
 
 ## 0. Antes de empezar
 
-Aplica primero el esquema a Supabase (una de las dos):
+Necesitas un Supabase funcionando (en la nube o auto-alojado) y aplicar el
+esquema. Si puedes conectarte desde tu máquina:
 
 ```bash
-npm run prisma:deploy          # desde tu máquina
+npm run prisma:deploy
 ```
+
 …o pega [`supabase-setup.sql`](supabase-setup.sql) en el SQL Editor de Supabase
 y luego corre `npm run prisma:resolve`.
 
-Ten a la mano:
-
-| Dato | Dónde se obtiene |
-|---|---|
-| `DATABASE_URL` y `DIRECT_URL` | Supabase → Project Settings → Database → Connection string |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API |
-| `ANTHROPIC_API_KEY` | console.anthropic.com |
-| URL y API key de Evolution | Tu instancia actual |
+> Si no aplicas el esquema, el contenedor lo intentará al arrancar. Funciona
+> igual, siempre que la cadena de conexión permita crear tablas.
 
 ---
 
@@ -54,53 +47,103 @@ EasyPanel → tu proyecto → **+ Service** → **App**
 ### Domains
 | Campo | Valor |
 |---|---|
-| Host | `crm.tudominio.com` |
+| Host | tu dominio, p. ej. `crm.tudominio.com` |
 | Port | **3000** |
 | HTTPS | Activado |
 
 ---
 
-## 2. Variables de entorno
+## 2. Conexión a Supabase
 
-Pégalas en **Environment**, sustituyendo los valores de ejemplo:
+Las cadenas son **distintas** según dónde corra tu Supabase. Elige tu caso.
 
-> ⚠️ **`TU-PROJECT-REF` y `TU-REGION` son marcadores: hay que sustituirlos.**
-> Si los dejas tal cual, el arranque falla con
+### Caso A — Supabase auto-alojado (en tu propio EasyPanel)
+
+Conexión directa al contenedor de Postgres. **No** hay pooler, ni project ref,
+ni `?pgbouncer=true`. `DIRECT_URL` es idéntica a `DATABASE_URL`.
+
+```env
+DATABASE_URL=postgresql://postgres:TU_PASSWORD@HOST_INTERNO:5432/postgres?schema=public
+DIRECT_URL=postgresql://postgres:TU_PASSWORD@HOST_INTERNO:5432/postgres?schema=public
+```
+
+Dónde sacar cada dato en EasyPanel:
+
+| Dato | Dónde |
+|---|---|
+| `HOST_INTERNO` | Nombre del servicio de la base dentro del proyecto de Supabase (`db`, `supabase-db`…). En EasyPanel se alcanza como `proyecto_servicio`, p. ej. `supabase_db`. |
+| `TU_PASSWORD` | Variable `POSTGRES_PASSWORD` del stack de Supabase. |
+| `SUPABASE_URL` | La URL pública de tu Supabase, p. ej. `https://supabase-supabase.tuservidor.easypanel.host` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Variable `SERVICE_ROLE_KEY` del stack (**no** la `ANON_KEY`). |
+
+> El CRM y Supabase deben estar en el **mismo proyecto** de EasyPanel para verse
+> por el hostname interno. Si están en proyectos distintos, conéctalos a la misma
+> red o expón el puerto 5432 del Postgres.
+
+**Crea el bucket:** en tu Studio → **Storage** → *New bucket* → nombre
+`documentos`, **privado** (sin marcar "Public bucket").
+
+### Caso B — Supabase Cloud (supabase.com)
+
+> **`TU-PROJECT-REF` y `TU-REGION` son marcadores: hay que sustituirlos.**
+> Si los dejas tal cual, falla con
 > `FATAL: (ENOTFOUND) tenant/user postgres.TU-PROJECT-REF not found`.
 >
-> Lo más seguro es **no escribir las cadenas a mano**: cópialas de
-> Supabase → botón **Connect** → pestaña **ORMs** → **Prisma**. Vienen con tu
-> project ref y tu región ya puestos; sólo sustituye la contraseña.
+> Lo más seguro es **no escribirlas a mano**: cópialas de Supabase → botón
+> **Connect** → pestaña **ORMs** → **Prisma**. Vienen con tu project ref y tu
+> región ya puestos; sólo sustituye la contraseña.
 >
-> Tu project ref es la parte que ya aparece en `SUPABASE_URL`:
+> Tu project ref es la parte que aparece en `SUPABASE_URL`:
 > `https://`**`abcdefghijklm`**`.supabase.co`
 
 ```env
-# ── Base de datos (Supabase) ──
 DATABASE_URL=postgresql://postgres.TU-PROJECT-REF:TU-PASSWORD@aws-0-TU-REGION.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
 DIRECT_URL=postgresql://postgres.TU-PROJECT-REF:TU-PASSWORD@aws-0-TU-REGION.pooler.supabase.com:5432/postgres
 
-# ── Almacenamiento de documentos ──
 SUPABASE_URL=https://TU-PROJECT-REF.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
+```
+
+> Usa el **Session pooler** (5432) para `DIRECT_URL`, no la "Direct connection"
+> (`db.xxx.supabase.co`): esa sólo acepta IPv6 y la mayoría de servidores no lo
+> tienen, así que daría un timeout sin explicación.
+
+### En ambos casos
+
+Si la contraseña lleva `@`, `#`, `/`, `?` o `:`, hay que codificarla
+(`@` → `%40`, `#` → `%23`). Lo más simple es ponerle una alfanumérica larga
+sin símbolos.
+
+---
+
+## 3. Variables de entorno
+
+Pégalas en **Environment** del servicio del CRM. Las cuatro primeras salen del
+apartado anterior según tu caso:
+
+```env
+DATABASE_URL=...
+DIRECT_URL=...
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_BUCKET=documentos
 
-# ── Sesiones ──
+# Sesiones
 JWT_SECRET=cZ0RwOSHoTuLKuUSy8rWCnbr58ducnRYDd80eaWA07KAItpWA4f2BdqDqKFYJq4L
 JWT_EXPIRES_IN=1d
 JWT_REFRESH_EXPIRES_IN=7d
 
-# ── IA (extracción de documentos y redacción de propuestas) ──
+# IA (extracción de documentos y redacción de propuestas)
 ANTHROPIC_API_KEY=sk-ant-xxxx
 CLAUDE_MODEL=claude-opus-4-8
 
-# ── WhatsApp (Evolution API) ──
+# WhatsApp (Evolution API)
 EVOLUTION_API_URL=https://evolution.tudominio.com
 EVOLUTION_API_KEY=tu_api_key_de_evolution
 EVOLUTION_INSTANCE=despacho
 EVOLUTION_WEBHOOK_TOKEN=qp3k9nqaDSPGEul0ztTRjyDX0amGyypo
 
-# ── Cron de cobranza (n8n) ──
+# Cron de cobranza (n8n)
 N8N_SERVICE_TOKEN=ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh
 ```
 
@@ -108,12 +151,12 @@ N8N_SERVICE_TOKEN=ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh
 la imagen ya trae valores correctos.
 
 > `EVOLUTION_WEBHOOK_TOKEN` y `N8N_SERVICE_TOKEN` deben coincidir exactamente
-> con los que configures en Evolution y n8n. Los de arriba están generados
-> y puedes usarlos tal cual.
+> con los que configures en Evolution y n8n. Los de arriba están generados y
+> puedes usarlos tal cual.
 
 ---
 
-## 3. Desplegar y comprobar
+## 4. Desplegar y comprobar
 
 Pulsa **Deploy**. El primer build tarda unos minutos (compila backend y panel).
 
@@ -124,23 +167,23 @@ Al arrancar, el contenedor:
 
 **Comprueba:**
 
-1. `https://crm.tudominio.com/api/health`
+1. `https://tudominio.com/api/health`
    → `{"estado":"ok","baseDatos":"ok",...}`
    Si dice `"baseDatos":"error"`, revisa `DATABASE_URL`.
 
-2. `https://crm.tudominio.com`
+2. `https://tudominio.com`
    → Entra con `admin@despacho.mx` / `cambiar123` y **cambia la contraseña
    de inmediato**: ese hash está en el repositorio.
 
 ---
 
-## 4. Conectar Evolution API
+## 5. Conectar Evolution API
 
 En tu instancia de Evolution, configura el webhook:
 
 | Campo | Valor |
 |---|---|
-| URL | `https://crm.tudominio.com/api/webhooks/evolution` |
+| URL | `https://tudominio.com/api/webhooks/evolution` |
 | Header | `x-webhook-token: qp3k9nqaDSPGEul0ztTRjyDX0amGyypo` |
 | Evento | `messages.upsert` |
 
@@ -150,21 +193,21 @@ de un cliente (en formato E.164, ej. `+525512345678`). Debe aparecer en
 
 ---
 
-## 5. Conectar n8n
+## 6. Conectar n8n
 
 Importa [`n8n/cobranza-recurrente.json`](n8n/cobranza-recurrente.json) y define
 en n8n estas variables:
 
 | Variable | Valor |
 |---|---|
-| `CRM_API_URL` | `https://crm.tudominio.com` |
+| `CRM_API_URL` | `https://tudominio.com` |
 | `N8N_SERVICE_TOKEN` | `ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh` |
 
 Pruébalo sin molestar a clientes reales (`enviarRecordatorios: false` recalcula
 estados pero no manda WhatsApp):
 
 ```bash
-curl -X POST https://crm.tudominio.com/api/cobranza/procesar \
+curl -X POST https://tudominio.com/api/cobranza/procesar \
   -H "x-service-token: ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh" \
   -H "Content-Type: application/json" \
   -d '{"enviarRecordatorios": false}'
@@ -174,34 +217,33 @@ curl -X POST https://crm.tudominio.com/api/cobranza/procesar \
 
 ## El contenedor se reinicia en bucle
 
-**Mira los logs del servicio** — desde la versión actual, el arranque dice
-exactamente qué falta. Busca una línea que empiece con `✗ ERROR:`.
-
-Los mensajes posibles y su solución:
+**Mira los logs del servicio.** El arranque dice exactamente qué falta: busca
+una línea que empiece con `✗ ERROR:`.
 
 | Mensaje en el log | Solución |
 |---|---|
-| `falta la variable DATABASE_URL` | Defínela en Environment. Es la cadena del **pooler** (puerto 6543) con `?pgbouncer=true`. |
+| `falta la variable DATABASE_URL` | Defínela en Environment (apartado 2). |
 | `falta la variable JWT_SECRET` | Defínela en Environment (cualquier cadena aleatoria larga). |
-| `fallaron las migraciones` | Mira el error de Prisma justo encima; los tres más comunes están abajo. |
-| `FATAL: (ENOTFOUND) tenant/user postgres.XXX not found` | El **project ref** de la cadena no existe. Casi siempre es que quedó el marcador `TU-PROJECT-REF` sin sustituir. Cópiala de Supabase → **Connect** → **ORMs** → **Prisma**. |
-| `password authentication failed` | Contraseña incorrecta, o tiene símbolos sin codificar (`@` → `%40`, `#` → `%23`). Lo más simple: resetéala en Supabase por una alfanumérica larga. |
-| `prepared statement "s0" already exists` | Falta `?pgbouncer=true` al final de `DATABASE_URL`. |
+| `fallaron las migraciones` | Mira el error de Prisma justo encima; los cuatro más comunes están abajo. |
+| `FATAL: (ENOTFOUND) tenant/user postgres.XXX not found` | Estás usando una cadena de Supabase Cloud. Si tu Supabase es auto-alojado, usa el **Caso A**: usuario `postgres` a secas, sin project ref ni pooler. |
+| `getaddrinfo ENOTFOUND <host>` | El hostname no se resuelve. En auto-alojado, el CRM y Supabase deben estar en el mismo proyecto de EasyPanel. |
+| `password authentication failed` | Contraseña incorrecta, o con símbolos sin codificar (`@` → `%40`). |
+| `prepared statement "s0" already exists` | Falta `?pgbouncer=true` en `DATABASE_URL` (sólo aplica a Supabase Cloud). |
 | `P3005: The database schema is not empty` | Aplicaste `supabase-setup.sql` a mano y no corriste después `npm run prisma:resolve`. |
 | `el backend terminó durante el arranque` | Justo encima aparece la lista de variables obligatorias que faltan. |
-| `el backend no respondió tras 80 segundos` | Normalmente es la base de datos: la conexión se queda colgada. Verifica que Supabase acepte conexiones desde el servidor. |
+| `el backend no respondió tras 80 segundos` | La conexión a la base se queda colgada. Verifica el hostname y que el puerto sea alcanzable. |
 
 Si el sistema arranca pero avisa de variables **recomendadas** que faltan, no es
 un error: el panel funciona, pero esas funciones concretas fallarán al usarse
 (por ejemplo, sin `SUPABASE_URL` no se pueden subir documentos).
 
-## Problemas frecuentes
+---
+
+## Otros problemas frecuentes
 
 | Síntoma | Causa y solución |
 |---|---|
 | `exec ./docker-entrypoint.sh: no such file or directory` | El script se subió con finales de línea CRLF. El `.gitattributes` del repo lo evita; si lo editaste en Windows, verifica que se guardó con LF. |
-| El contenedor reinicia en bucle | Mira los logs. Si el error es de migraciones diciendo que las tablas ya existen, corriste el SQL a mano sin `npm run prisma:resolve`. |
-| `"baseDatos":"error"` en `/api/health` | `DATABASE_URL` incorrecta, o le falta `?pgbouncer=true` a la cadena del pooler (puerto 6543). |
 | El panel carga pero el login da error de red | Revisa los logs: probablemente el backend no arrancó. El panel funciona igual porque son procesos distintos. |
 | Los adjuntos de WhatsApp no llegan | El webhook debe apuntar a `/api/webhooks/evolution` y el token coincidir con `EVOLUTION_WEBHOOK_TOKEN`. |
 | Llega el adjunto pero sin cliente asignado | El número de WhatsApp del cliente debe estar en E.164 (`+52...`) en su ficha. |
