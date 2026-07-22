@@ -1,0 +1,433 @@
+// ─────────────────────────────────────────────────────────────
+// Esquema de datos COMPLETO del CRM de Seguros de Flotas.
+// Se define entero desde la Fase A para no requerir migraciones
+// destructivas al implementar los módulos posteriores.
+// El módulo de SINIESTROS queda RESERVADO (stub) — sin lógica en
+// esta fase, pero con la relación Poliza -> Siniestro[] lista.
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Supabase: `url` usa el pooler (pgBouncer, puerto 6543) para el runtime,
+// y `directUrl` la conexión directa (puerto 5432) que Prisma necesita para migrar.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum Rol {
+  captura
+  tecnico
+  comercial
+  administracion
+  admin
+}
+
+enum EstadoExpediente {
+  en_captura
+  en_analisis_tecnico
+  en_revision_comercial
+  ajustado
+  aprobado
+  enviado_a_cliente
+}
+
+enum TipoUnidad {
+  camion
+  tractocamion
+  remolque
+  otro
+}
+
+enum TipoDocumento {
+  recibido
+  comparativo
+  propuesta
+  desglose
+  poliza
+  factura
+  complemento
+  comprobante_pago
+}
+
+enum OrigenDocumento {
+  whatsapp
+  generado
+  manual_upload
+}
+
+enum EstadoRevision {
+  pendiente
+  aprobado
+  corregido
+}
+
+enum EstadoPoliza {
+  pendiente_emision
+  emitida
+  cancelada
+}
+
+enum EstadoCobranza {
+  vigente
+  por_vencer
+  vencido
+  pagado
+}
+
+enum FormaPago {
+  transferencia
+  efectivo
+  cheque
+  tarjeta
+  otro
+}
+
+// ───────────────────────── Usuarios ─────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  nombre       String
+  email        String   @unique
+  passwordHash String
+  rol          Rol
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  expedientesCreados Expediente[] @relation("ExpedienteCreadoPor")
+  extraccionesRevisadas Extraccion[] @relation("ExtraccionRevisadaPor")
+  comentarios  Comentario[]
+  pagosRegistrados Pago[]        @relation("PagoRegistradoPor")
+  auditLogs    AuditLog[]
+  notificaciones Notificacion[]
+}
+
+// Notificaciones internas del sistema (p. ej. "el comparativo está listo para revisión").
+// Se dirigen a un usuario concreto o a todos los de un rol.
+model Notificacion {
+  id           String      @id @default(cuid())
+  usuarioId    String?
+  usuario      User?       @relation(fields: [usuarioId], references: [id])
+  rolDestino   Rol?
+  titulo       String
+  mensaje      String
+  enlace       String?
+  leida        Boolean     @default(false)
+  expedienteId String?
+  expediente   Expediente? @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+
+  @@index([usuarioId, leida])
+  @@index([rolDestino, leida])
+}
+
+// ───────────────────────── Clientes y flotas ─────────────────────────
+
+model Cliente {
+  id             String   @id @default(cuid())
+  razonSocial    String
+  rfc            String?
+  datosFiscales  Json?    // dirección fiscal, régimen, uso CFDI, etc.
+  contactoNombre String?
+  contactoEmail  String?
+  // Número de WhatsApp normalizado (E.164). Clave del match automático de mensajes entrantes.
+  whatsappNumber String?  @unique
+  notas          String?
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  unidades     Unidad[]
+  expedientes  Expediente[]
+  polizas      Poliza[]
+  documentos   Documento[]
+
+  @@index([razonSocial])
+}
+
+model Unidad {
+  id             String     @id @default(cuid())
+  clienteId      String
+  cliente        Cliente    @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  tipo           TipoUnidad @default(otro)
+  vin            String?    // número de serie
+  anio           Int?
+  marca          String?
+  modelo         String?
+  descripcion    String?
+  tipoCarga      String?    // tipo de carga que transporta
+  valorAsegurado Decimal?   @db.Decimal(14, 2)
+  // Absorbe cualquier columna del "vaciado en Excel" del despacho sin cambiar el esquema.
+  camposExtra    Json?
+  activo         Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  polizas Poliza[]
+
+  @@index([clienteId])
+  @@index([vin])
+}
+
+// ───────────────────────── Aseguradoras ─────────────────────────
+
+model Aseguradora {
+  id         String   @id @default(cuid())
+  nombre     String   @unique
+  contacto   String?
+  notasPortal String? // notas del orden de captura del portal (para checklists)
+  activo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  propuestas PropuestaAseguradora[]
+  polizas    Poliza[]
+}
+
+// ───────────────────────── Expediente (flujo) ─────────────────────────
+
+model Expediente {
+  id          String           @id @default(cuid())
+  folioInterno String          @unique @default(cuid())
+  clienteId   String
+  cliente     Cliente          @relation(fields: [clienteId], references: [id])
+  estado      EstadoExpediente @default(en_captura)
+  // Siniestralidad que aporta el cliente; alimenta el análisis técnico.
+  siniestralidad String?
+  // IDs de aseguradoras a las que se solicitó propuesta. Cuando todas están
+  // capturadas, el comparativo se genera automáticamente sin paso manual.
+  aseguradorasSolicitadas String[] @default([])
+  createdById String?
+  createdBy   User?            @relation("ExpedienteCreadoPor", fields: [createdById], references: [id])
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  propuestasAseguradora PropuestaAseguradora[]
+  comparativos          Comparativo[]
+  propuestaCliente      PropuestaCliente?
+  polizas               Poliza[]
+  documentos            Documento[]
+  comentarios           Comentario[]
+  notificaciones        Notificacion[]
+
+  @@index([clienteId])
+  @@index([estado])
+}
+
+model Comentario {
+  id           String     @id @default(cuid())
+  expedienteId String
+  expediente   Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  autorId      String
+  autor        User       @relation(fields: [autorId], references: [id])
+  contenido    String
+  createdAt    DateTime   @default(now())
+
+  @@index([expedienteId])
+}
+
+// ───────────────────────── Documentos ─────────────────────────
+
+model Documento {
+  id            String          @id @default(cuid())
+  clienteId     String?
+  cliente       Cliente?        @relation(fields: [clienteId], references: [id])
+  expedienteId  String?
+  expediente    Expediente?     @relation(fields: [expedienteId], references: [id])
+  polizaId      String?
+  poliza        Poliza?         @relation(fields: [polizaId], references: [id])
+  tipo          TipoDocumento
+  origen        OrigenDocumento
+  storageKey    String          // clave del objeto en MinIO/S3
+  mime          String?
+  nombreOriginal String?
+  procesado     Boolean         @default(false) // bandeja: origen=whatsapp AND procesado=false
+  metadata      Json?           // datos del mensaje de WhatsApp de origen, etc.
+  createdAt     DateTime        @default(now())
+
+  extraccion Extraccion?
+
+  @@index([clienteId])
+  @@index([origen, procesado])
+}
+
+// ───────────────────────── Extracción IA ─────────────────────────
+
+model Extraccion {
+  id                String         @id @default(cuid())
+  documentoId       String         @unique
+  documento         Documento      @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  camposExtraidos   Json           // { vin, anio, marca, modelo, ... }
+  confianzaPorCampo Json           // { vin: 0.98, anio: 0.4, ... }
+  estadoRevision    EstadoRevision @default(pendiente)
+  revisadoPorId     String?
+  revisadoPor       User?          @relation("ExtraccionRevisadaPor", fields: [revisadoPorId], references: [id])
+  modeloUsado       String?
+  createdAt         DateTime       @default(now())
+  revisadoEn        DateTime?
+
+  @@index([estadoRevision])
+}
+
+// ───────────────────────── Técnico: propuestas y comparativo ─────────────────────────
+
+model PropuestaAseguradora {
+  id            String      @id @default(cuid())
+  expedienteId  String
+  expediente    Expediente  @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  aseguradoraId String
+  aseguradora   Aseguradora @relation(fields: [aseguradoraId], references: [id])
+  coberturas    Json        // estructurado, no texto libre
+  prima         Decimal?    @db.Decimal(14, 2)
+  deducibles    Json?
+  condiciones   String?
+  siniestralidad String?    // dato aportado por el cliente
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([expedienteId, aseguradoraId])
+  @@index([expedienteId])
+}
+
+model Comparativo {
+  id           String     @id @default(cuid())
+  expedienteId String
+  expediente   Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  datosTabla   Json       // matriz de coberturas/prima/deducibles por aseguradora
+  pdfDocId     String?
+  excelDocId   String?
+  generadoEn   DateTime   @default(now())
+
+  @@index([expedienteId])
+}
+
+model PropuestaCliente {
+  id           String     @id @default(cuid())
+  expedienteId String     @unique
+  expediente   Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  contenido    Json       // resumen, alcance de cobertura, costos, condiciones
+  pdfDocId     String?
+  enviadaEn    DateTime?
+  createdAt    DateTime   @default(now())
+}
+
+// ───────────────────────── Pólizas ─────────────────────────
+
+model Poliza {
+  id             String       @id @default(cuid())
+  clienteId      String
+  cliente        Cliente      @relation(fields: [clienteId], references: [id])
+  unidadId       String
+  unidad         Unidad       @relation(fields: [unidadId], references: [id])
+  aseguradoraId  String
+  aseguradora    Aseguradora  @relation(fields: [aseguradoraId], references: [id])
+  expedienteId   String?
+  expediente     Expediente?  @relation(fields: [expedienteId], references: [id])
+  folio          String?      // folio de la aseguradora (capturado o extraído por IA)
+  vigenciaInicio DateTime?
+  vigenciaFin    DateTime?
+  prima          Decimal?     @db.Decimal(14, 2)
+  estado         EstadoPoliza @default(pendiente_emision)
+  pdfDocId       String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  cortes     Corte[]
+  pagos      Pago[]
+  documentos Documento[]
+  facturas   Factura[]
+  // RESERVADO para el módulo futuro de Siniestros (sin lógica en esta fase).
+  siniestros Siniestro[]
+
+  @@index([clienteId])
+  @@index([estado])
+}
+
+// ───────────────────────── Cobranza recurrente ─────────────────────────
+
+model Corte {
+  id              String         @id @default(cuid())
+  polizaId        String
+  poliza          Poliza         @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  periodo         String         // p.ej. "2026-07"
+  fechaCorte      DateTime
+  fechaProximoPago DateTime      // fechaCorte + 30 días naturales
+  montoEsperado   Decimal?       @db.Decimal(14, 2)
+  estado          EstadoCobranza @default(vigente)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  pagos Pago[]
+
+  @@unique([polizaId, periodo])
+  @@index([estado])
+  @@index([fechaProximoPago])
+}
+
+model Pago {
+  id               String     @id @default(cuid())
+  polizaId         String
+  poliza           Poliza     @relation(fields: [polizaId], references: [id])
+  corteId          String?
+  corte            Corte?     @relation(fields: [corteId], references: [id])
+  fecha            DateTime
+  monto            Decimal    @db.Decimal(14, 2)
+  forma            FormaPago  @default(transferencia)
+  comprobanteDocId String?
+  aplicadoEnPortal Boolean    @default(false)
+  registradoPorId  String?
+  registradoPor    User?      @relation("PagoRegistradoPor", fields: [registradoPorId], references: [id])
+  createdAt        DateTime   @default(now())
+
+  @@index([polizaId])
+}
+
+// ───────────────────────── Facturación y complementos ─────────────────────────
+
+model Factura {
+  id                 String        @id @default(cuid())
+  polizaId           String
+  poliza             Poliza        @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  tipo               TipoDocumento // factura | complemento
+  storageDocId       String?
+  enviadoAlClienteEn DateTime?
+  createdAt          DateTime      @default(now())
+
+  @@index([polizaId])
+}
+
+// ───────────────────────── Auditoría ─────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  entidad     String   // "Cliente", "Expediente", ...
+  entidadId   String
+  accion      String   // "create" | "update" | "delete" | "estado" | ...
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id])
+  diff        Json?
+  timestamp   DateTime @default(now())
+
+  @@index([entidad, entidadId])
+  @@index([timestamp])
+}
+
+// ───────────────────────── SINIESTROS (RESERVADO / stub) ─────────────────────────
+// No se implementa lógica en esta fase. Se deja la tabla y la relación
+// Poliza -> Siniestro[] para poder desarrollar el módulo sin migración destructiva.
+
+model Siniestro {
+  id          String   @id @default(cuid())
+  polizaId    String
+  poliza      Poliza   @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  // Campos por definir en la fase futura de Siniestros.
+  createdAt   DateTime @default(now())
+
+  @@index([polizaId])
+}

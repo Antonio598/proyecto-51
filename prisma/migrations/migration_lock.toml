@@ -1,0 +1,2 @@
+# Este archivo lo genera Prisma y debe versionarse.
+provider = "postgresql"

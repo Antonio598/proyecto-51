@@ -1,0 +1,58 @@
+# Infraestructura del CRM de Seguros de Flotas.
+# La base de datos y el almacenamiento de archivos viven en Supabase (gestionado),
+# así que aquí solo se levantan backend y frontend.
+# n8n y Evolution API ya existen en tu infra: conéctalos por la red `crm_net`
+# (o deja sus URLs actuales en .env).
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_BUCKET: ${SUPABASE_BUCKET}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN}
+      BACKEND_PORT: ${BACKEND_PORT}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL: ${CLAUDE_MODEL}
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE}
+      EVOLUTION_WEBHOOK_TOKEN: ${EVOLUTION_WEBHOOK_TOKEN}
+      N8N_SERVICE_TOKEN: ${N8N_SERVICE_TOKEN}
+    ports:
+      - '${BACKEND_PORT}:3001'
+    networks:
+      - crm_net
+    healthcheck:
+      test:
+        ['CMD', 'node', '-e', "fetch('http://localhost:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '${FRONTEND_PORT}:3000'
+    networks:
+      - crm_net
+
+networks:
+  crm_net:
+    driver: bridge

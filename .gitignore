@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Env
+.env
+.env.local
+*.env
+!.env.example
+
+# Prisma
+prisma/*.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Docker volumes locales
+/data/

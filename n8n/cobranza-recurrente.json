@@ -1,0 +1,128 @@
+{
+  "name": "CRM Seguros — Cobranza recurrente",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-diario",
+      "name": "Todos los días 9:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL }}/api/cobranza/asegurar-cortes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-service-token",
+              "value": "={{ $env.N8N_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "asegurar-cortes",
+      "name": "Asegurar cortes faltantes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_URL }}/api/cobranza/procesar",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-service-token",
+              "value": "={{ $env.N8N_SERVICE_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"enviarRecordatorios\": true}",
+        "options": {}
+      },
+      "id": "procesar-cobranza",
+      "name": "Actualizar estados y enviar recordatorios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hay-vencidos",
+              "leftValue": "={{ $json.vencidos }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "si-hay-vencidos",
+      "name": "¿Hay vencidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "content": "=Cobranza {{ $now.format('dd/MM/yyyy') }}: {{ $json.vencidos }} vencido(s), {{ $json.porVencer }} por vencer. Recordatorios enviados: {{ $json.recordatorios.filter(r => r.enviado).length }}.",
+        "options": {}
+      },
+      "id": "alerta-interna",
+      "name": "Alerta al despacho",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1200, 200],
+      "notes": "Sustituye este nodo por tu canal interno (correo, Slack o WhatsApp del despacho)."
+    }
+  ],
+  "connections": {
+    "Todos los días 9:00": {
+      "main": [[{ "node": "Asegurar cortes faltantes", "type": "main", "index": 0 }]]
+    },
+    "Asegurar cortes faltantes": {
+      "main": [
+        [{ "node": "Actualizar estados y enviar recordatorios", "type": "main", "index": 0 }]
+      ]
+    },
+    "Actualizar estados y enviar recordatorios": {
+      "main": [[{ "node": "¿Hay vencidos?", "type": "main", "index": 0 }]]
+    },
+    "¿Hay vencidos?": {
+      "main": [[{ "node": "Alerta al despacho", "type": "main", "index": 0 }], []]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Mexico_City"
+  },
+  "tags": [{ "name": "crm-seguros" }]
+}
