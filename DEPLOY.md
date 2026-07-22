@@ -64,13 +64,24 @@ EasyPanel → tu proyecto → **+ Service** → **App**
 
 Pégalas en **Environment**, sustituyendo los valores de ejemplo:
 
+> ⚠️ **`TU-PROJECT-REF` y `TU-REGION` son marcadores: hay que sustituirlos.**
+> Si los dejas tal cual, el arranque falla con
+> `FATAL: (ENOTFOUND) tenant/user postgres.TU-PROJECT-REF not found`.
+>
+> Lo más seguro es **no escribir las cadenas a mano**: cópialas de
+> Supabase → botón **Connect** → pestaña **ORMs** → **Prisma**. Vienen con tu
+> project ref y tu región ya puestos; sólo sustituye la contraseña.
+>
+> Tu project ref es la parte que ya aparece en `SUPABASE_URL`:
+> `https://`**`abcdefghijklm`**`.supabase.co`
+
 ```env
 # ── Base de datos (Supabase) ──
-DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
-DIRECT_URL=postgresql://postgres.xxxx:PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql://postgres.TU-PROJECT-REF:TU-PASSWORD@aws-0-TU-REGION.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
+DIRECT_URL=postgresql://postgres.TU-PROJECT-REF:TU-PASSWORD@aws-0-TU-REGION.pooler.supabase.com:5432/postgres
 
 # ── Almacenamiento de documentos ──
-SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_URL=https://TU-PROJECT-REF.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
 SUPABASE_BUCKET=documentos
 
@@ -172,7 +183,11 @@ Los mensajes posibles y su solución:
 |---|---|
 | `falta la variable DATABASE_URL` | Defínela en Environment. Es la cadena del **pooler** (puerto 6543) con `?pgbouncer=true`. |
 | `falta la variable JWT_SECRET` | Defínela en Environment (cualquier cadena aleatoria larga). |
-| `fallaron las migraciones` | La causa más común: aplicaste `supabase-setup.sql` a mano y no corriste `npm run prisma:resolve`. También revisa que `DATABASE_URL` sea correcta. |
+| `fallaron las migraciones` | Mira el error de Prisma justo encima; los tres más comunes están abajo. |
+| `FATAL: (ENOTFOUND) tenant/user postgres.XXX not found` | El **project ref** de la cadena no existe. Casi siempre es que quedó el marcador `TU-PROJECT-REF` sin sustituir. Cópiala de Supabase → **Connect** → **ORMs** → **Prisma**. |
+| `password authentication failed` | Contraseña incorrecta, o tiene símbolos sin codificar (`@` → `%40`, `#` → `%23`). Lo más simple: resetéala en Supabase por una alfanumérica larga. |
+| `prepared statement "s0" already exists` | Falta `?pgbouncer=true` al final de `DATABASE_URL`. |
+| `P3005: The database schema is not empty` | Aplicaste `supabase-setup.sql` a mano y no corriste después `npm run prisma:resolve`. |
 | `el backend terminó durante el arranque` | Justo encima aparece la lista de variables obligatorias que faltan. |
 | `el backend no respondió tras 80 segundos` | Normalmente es la base de datos: la conexión se queda colgada. Verifica que Supabase acepte conexiones desde el servidor. |
 
