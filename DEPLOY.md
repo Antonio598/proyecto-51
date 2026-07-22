@@ -53,37 +53,33 @@ EasyPanel → tu proyecto → **+ Service** → **App**
 
 ---
 
-## 2. Conexión a Supabase
+## 2. Base de datos
 
-Las cadenas son **distintas** según dónde corra tu Supabase. Elige tu caso.
+### Recomendado — Postgres dedicado para el CRM
 
-### Caso A — Supabase auto-alojado (en tu propio EasyPanel)
-
-Conexión directa al contenedor de Postgres. **No** hay pooler, ni project ref,
-ni `?pgbouncer=true`. `DIRECT_URL` es idéntica a `DATABASE_URL`.
+**+ Service → Postgres**, ponle nombre `crm-db`. EasyPanel te muestra la cadena
+de conexión interna ya hecha; úsala en las dos variables:
 
 ```env
-DATABASE_URL=postgresql://postgres:TU_PASSWORD@HOST_INTERNO:5432/postgres?schema=public
-DIRECT_URL=postgresql://postgres:TU_PASSWORD@HOST_INTERNO:5432/postgres?schema=public
+DATABASE_URL=postgresql://postgres:LA_PASSWORD@TU-PROYECTO_crm-db:5432/postgres?schema=public
+DIRECT_URL=postgresql://postgres:LA_PASSWORD@TU-PROYECTO_crm-db:5432/postgres?schema=public
 ```
 
-Dónde sacar cada dato en EasyPanel:
+**No hace falta crear las tablas ni ejecutar seeds:** al arrancar, el contenedor
+aplica las migraciones y, si la base está vacía, crea el usuario administrador
+y el catálogo de aseguradoras. Verás las credenciales en los logs.
 
-| Dato | Dónde |
-|---|---|
-| `HOST_INTERNO` | Nombre del servicio de la base dentro del proyecto de Supabase (`db`, `supabase-db`…). En EasyPanel se alcanza como `proyecto_servicio`, p. ej. `supabase_db`. |
-| `TU_PASSWORD` | Variable `POSTGRES_PASSWORD` del stack de Supabase. |
-| `SUPABASE_URL` | La URL pública de tu Supabase, p. ej. `https://supabase-supabase.tuservidor.easypanel.host` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Variable `SERVICE_ROLE_KEY` del stack (**no** la `ANON_KEY`). |
+> ### ⚠️ Si tu Supabase es auto-alojado con docker-compose
+>
+> **No podrás usar su Postgres desde otro servicio de EasyPanel.** El contenedor
+> `db` vive en la red interna de ese compose y no es alcanzable desde fuera:
+> obtendrás `P1001: Can't reach database server at db:5432` sin importar el
+> hostname que pruebes.
+>
+> Usa un Postgres dedicado como arriba y deja Supabase **sólo para Storage**
+> (eso funciona por HTTPS contra Kong, sin problemas de red).
 
-> El CRM y Supabase deben estar en el **mismo proyecto** de EasyPanel para verse
-> por el hostname interno. Si están en proyectos distintos, conéctalos a la misma
-> red o expón el puerto 5432 del Postgres.
-
-**Crea el bucket:** en tu Studio → **Storage** → *New bucket* → nombre
-`documentos`, **privado** (sin marcar "Public bucket").
-
-### Caso B — Supabase Cloud (supabase.com)
+### Alternativa — Supabase Cloud (supabase.com)
 
 > **`TU-PROJECT-REF` y `TU-REGION` son marcadores: hay que sustituirlos.**
 > Si los dejas tal cual, falla con
@@ -108,11 +104,33 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
 > (`db.xxx.supabase.co`): esa sólo acepta IPv6 y la mayoría de servidores no lo
 > tienen, así que daría un timeout sin explicación.
 
-### En ambos casos
+### En cualquier caso
 
 Si la contraseña lleva `@`, `#`, `/`, `?` o `:`, hay que codificarla
 (`@` → `%40`, `#` → `%23`). Lo más simple es ponerle una alfanumérica larga
 sin símbolos.
+
+---
+
+## 2b. Almacenamiento de documentos (Supabase Storage)
+
+Esto es independiente de la base de datos y **funciona entre servidores**,
+porque se usa por HTTPS contra Kong:
+
+```env
+SUPABASE_URL=https://tu-supabase.easypanel.host
+SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key
+SUPABASE_BUCKET=documentos
+```
+
+**Crea el bucket:** Studio → **Storage** → *New bucket* → nombre `documentos`,
+**privado** (sin marcar "Public bucket"). Si lo dejas público, expones las
+pólizas y comprobantes de tus clientes a cualquiera con el enlace.
+
+> En una instalación auto-alojada, `SERVICE_ROLE_KEY` está en las variables del
+> stack de Supabase. Si sigue siendo la de ejemplo (`"iss": "supabase-demo"`),
+> **regenérala** con `sh ./utils/generate-keys.sh` antes de guardar datos reales:
+> esa clave está publicada en la documentación de Supabase.
 
 ---
 
@@ -172,8 +190,15 @@ Al arrancar, el contenedor:
    Si dice `"baseDatos":"error"`, revisa `DATABASE_URL`.
 
 2. `https://tudominio.com`
-   → Entra con `admin@despacho.mx` / `cambiar123` y **cambia la contraseña
-   de inmediato**: ese hash está en el repositorio.
+   → En el **primer arranque** el sistema crea el administrador y lo anuncia
+   en los logs:
+   ```
+   Primer arranque: usuario administrador creado
+      Correo:     admin@despacho.mx
+      Contraseña: cambiar123  ← CÁMBIALA AL ENTRAR
+   ```
+   Puedes fijar otras credenciales con las variables `ADMIN_EMAIL` y
+   `ADMIN_PASSWORD` antes del primer despliegue.
 
 ---
 
@@ -226,7 +251,8 @@ una línea que empiece con `✗ ERROR:`.
 | `falta la variable JWT_SECRET` | Defínela en Environment (cualquier cadena aleatoria larga). |
 | `fallaron las migraciones` | Mira el error de Prisma justo encima; los cuatro más comunes están abajo. |
 | `FATAL: (ENOTFOUND) tenant/user postgres.XXX not found` | Estás usando una cadena de Supabase Cloud. Si tu Supabase es auto-alojado, usa el **Caso A**: usuario `postgres` a secas, sin project ref ni pooler. |
-| `getaddrinfo ENOTFOUND <host>` | El hostname no se resuelve. En auto-alojado, el CRM y Supabase deben estar en el mismo proyecto de EasyPanel. |
+| `P1001: Can't reach database server at db:5432` | Estás apuntando al Postgres de un Supabase auto-alojado con docker-compose. Su red es interna y no es alcanzable: crea un Postgres dedicado (apartado 2). |
+| `getaddrinfo ENOTFOUND <host>` | El hostname no se resuelve. El Postgres debe ser un servicio del **mismo proyecto** de EasyPanel, y el nombre es `proyecto_servicio`. |
 | `password authentication failed` | Contraseña incorrecta, o con símbolos sin codificar (`@` → `%40`). |
 | `prepared statement "s0" already exists` | Falta `?pgbouncer=true` en `DATABASE_URL` (sólo aplica a Supabase Cloud). |
 | `P3005: The database schema is not empty` | Aplicaste `supabase-setup.sql` a mano y no corriste después `npm run prisma:resolve`. |
