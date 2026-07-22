@@ -1,0 +1,18 @@
+# Normaliza los finales de línea al guardar en el repositorio.
+* text=auto eol=lf
+
+# Estos DEBEN ir con LF: con CRLF, Linux falla con un
+# "no such file or directory" que no dice nada del problema real.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# Binarios: que git no los toque.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.xlsx binary
+*.ico binary

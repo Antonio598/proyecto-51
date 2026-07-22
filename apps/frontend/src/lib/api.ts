@@ -1,6 +1,10 @@
 // Cliente de API sencillo hacia el backend NestJS.
 // Guarda el token JWT en localStorage y lo adjunta en cada petición.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+//
+// Vacío por defecto: las peticiones van a /api del mismo dominio y Next las
+// reenvía al backend interno (ver `rewrites` en next.config.mjs). Sólo hace
+// falta definir NEXT_PUBLIC_API_URL si el backend se despliega por separado.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 const TOKEN_KEY = 'crm_token';
 const USER_KEY = 'crm_user';

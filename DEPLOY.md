@@ -1,34 +1,38 @@
 # Despliegue en EasyPanel
 
-Se despliegan **dos servicios** desde este mismo repositorio: `backend` y `frontend`.
-La base de datos y el almacenamiento son de Supabase, así que no hay que levantar
+Todo el sistema va en **un solo servicio**. La imagen incluye backend y panel:
+Next.js sirve la interfaz y reenvía `/api` al backend interno, así que sólo se
+expone un puerto y no hay que configurar URLs cruzadas.
+
+La base de datos y el almacenamiento son de Supabase — no hay que levantar
 Postgres ni MinIO.
 
 ---
 
 ## 0. Antes de empezar
 
+Aplica primero el esquema a Supabase (una de las dos):
+
+```bash
+npm run prisma:deploy          # desde tu máquina
+```
+…o pega [`supabase-setup.sql`](supabase-setup.sql) en el SQL Editor de Supabase
+y luego corre `npm run prisma:resolve`.
+
 Ten a la mano:
 
 | Dato | Dónde se obtiene |
 |---|---|
-| Cadenas de conexión de Supabase | Supabase → Project Settings → Database → Connection string |
-| `service_role` key de Supabase | Supabase → Project Settings → API |
-| API key de Anthropic | console.anthropic.com |
+| `DATABASE_URL` y `DIRECT_URL` | Supabase → Project Settings → Database → Connection string |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API |
+| `ANTHROPIC_API_KEY` | console.anthropic.com |
 | URL y API key de Evolution | Tu instancia actual |
-
-Y decide dos subdominios, por ejemplo:
-
-- **Frontend:** `crm.tudominio.com`
-- **Backend:** `api.tudominio.com`
-
-Aplica el esquema a Supabase primero (ver `supabase-setup.sql` o `npm run prisma:deploy`).
 
 ---
 
-## 1. Servicio `backend`
+## 1. Crear el servicio
 
-**Crear:** EasyPanel → tu proyecto → **+ Service** → **App**
+EasyPanel → tu proyecto → **+ Service** → **App**
 
 ### Source
 | Campo | Valor |
@@ -41,140 +45,146 @@ Aplica el esquema a Supabase primero (ver `supabase-setup.sql` o `npm run prisma
 | Campo | Valor |
 |---|---|
 | Method | **Dockerfile** |
-| Dockerfile Path | `apps/backend/Dockerfile` |
+| Dockerfile Path | `Dockerfile` |
 | Build Context | `/` |
 
-> El contexto **debe** ser la raíz del repo, no `apps/backend`: el Dockerfile necesita
-> el `package.json` raíz y la carpeta `prisma/`.
-
-### Environment
-
-```env
-DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
-DIRECT_URL=postgresql://postgres.xxxx:PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres
-
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
-SUPABASE_BUCKET=documentos
-
-BACKEND_PORT=3001
-FRONTEND_ORIGIN=https://crm.tudominio.com
-
-JWT_SECRET=cZ0RwOSHoTuLKuUSy8rWCnbr58ducnRYDd80eaWA07KAItpWA4f2BdqDqKFYJq4L
-JWT_EXPIRES_IN=1d
-JWT_REFRESH_EXPIRES_IN=7d
-
-ANTHROPIC_API_KEY=sk-ant-xxxx
-CLAUDE_MODEL=claude-opus-4-8
-
-EVOLUTION_API_URL=https://evolution.tudominio.com
-EVOLUTION_API_KEY=tu_api_key_de_evolution
-EVOLUTION_INSTANCE=despacho
-EVOLUTION_WEBHOOK_TOKEN=qp3k9nqaDSPGEul0ztTRjyDX0amGyypo
-
-N8N_SERVICE_TOKEN=ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh
-```
-
-> Los tres secretos ya vienen generados. Si prefieres otros, cualquier cadena
-> aleatoria larga sirve — pero `N8N_SERVICE_TOKEN` y `EVOLUTION_WEBHOOK_TOKEN`
-> deben coincidir con los que configures en n8n y Evolution.
-
-### Domains
-| Campo | Valor |
-|---|---|
-| Host | `api.tudominio.com` |
-| Port | `3001` |
-| HTTPS | Activado |
-
-El contenedor aplica las migraciones de Prisma al arrancar (`prisma migrate deploy`).
-
----
-
-## 2. Servicio `frontend`
-
-**Crear:** otro **App** en el mismo proyecto.
-
-### Source
-Igual que el backend: repo `Antonio598/proyecto-51`, branch `main`.
-
-### Build
-| Campo | Valor |
-|---|---|
-| Method | **Dockerfile** |
-| Dockerfile Path | `apps/frontend/Dockerfile` |
-| Build Context | `/` |
-
-### ⚠️ Build Arguments — el paso que más se olvida
-
-En EasyPanel: **Build → Build Arguments** (no en Environment):
-
-```
-NEXT_PUBLIC_API_URL=https://api.tudominio.com
-```
-
-> Next.js **incrusta** las variables `NEXT_PUBLIC_*` durante la compilación, no las
-> lee en tiempo de ejecución. Si la pones sólo en *Environment*, el panel compilará
-> apuntando a `localhost:3001` y **no podrá hablar con el backend** — verás la pantalla
-> de login pero fallará al iniciar sesión. Si cambias el dominio del backend después,
-> tienes que **reconstruir** el frontend, no basta con reiniciar.
-
-### Environment
-```env
-PORT=3000
-```
+> El `Dockerfile` está en la raíz del repo. No hace falta configurar build
+> arguments: la URL de la API es relativa al propio dominio.
 
 ### Domains
 | Campo | Valor |
 |---|---|
 | Host | `crm.tudominio.com` |
-| Port | `3000` |
+| Port | **3000** |
 | HTTPS | Activado |
 
 ---
 
-## 3. Después del primer despliegue
+## 2. Variables de entorno
 
-1. **Verifica el backend:** abre `https://api.tudominio.com/api/health`
-   → debe responder `{"estado":"ok","baseDatos":"ok",...}`.
+Pégalas en **Environment**, sustituyendo los valores de ejemplo:
+
+```env
+# ── Base de datos (Supabase) ──
+DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
+DIRECT_URL=postgresql://postgres.xxxx:PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+
+# ── Almacenamiento de documentos ──
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
+SUPABASE_BUCKET=documentos
+
+# ── Sesiones ──
+JWT_SECRET=cZ0RwOSHoTuLKuUSy8rWCnbr58ducnRYDd80eaWA07KAItpWA4f2BdqDqKFYJq4L
+JWT_EXPIRES_IN=1d
+JWT_REFRESH_EXPIRES_IN=7d
+
+# ── IA (extracción de documentos y redacción de propuestas) ──
+ANTHROPIC_API_KEY=sk-ant-xxxx
+CLAUDE_MODEL=claude-opus-4-8
+
+# ── WhatsApp (Evolution API) ──
+EVOLUTION_API_URL=https://evolution.tudominio.com
+EVOLUTION_API_KEY=tu_api_key_de_evolution
+EVOLUTION_INSTANCE=despacho
+EVOLUTION_WEBHOOK_TOKEN=qp3k9nqaDSPGEul0ztTRjyDX0amGyypo
+
+# ── Cron de cobranza (n8n) ──
+N8N_SERVICE_TOKEN=ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh
+```
+
+**No necesitas definir** `PORT`, `BACKEND_PORT` ni `NEXT_PUBLIC_API_URL`:
+la imagen ya trae valores correctos.
+
+> `EVOLUTION_WEBHOOK_TOKEN` y `N8N_SERVICE_TOKEN` deben coincidir exactamente
+> con los que configures en Evolution y n8n. Los de arriba están generados
+> y puedes usarlos tal cual.
+
+---
+
+## 3. Desplegar y comprobar
+
+Pulsa **Deploy**. El primer build tarda unos minutos (compila backend y panel).
+
+Al arrancar, el contenedor:
+1. Aplica las migraciones de Prisma
+2. Levanta el backend en el puerto interno 3001
+3. Espera a que responda y levanta el panel en el 3000
+
+**Comprueba:**
+
+1. `https://crm.tudominio.com/api/health`
+   → `{"estado":"ok","baseDatos":"ok",...}`
    Si dice `"baseDatos":"error"`, revisa `DATABASE_URL`.
 
-2. **Entra al panel:** `https://crm.tudominio.com` con `admin@despacho.mx` / `cambiar123`
-   y **cambia la contraseña de inmediato** — ese hash es público, está en el repo.
+2. `https://crm.tudominio.com`
+   → Entra con `admin@despacho.mx` / `cambiar123` y **cambia la contraseña
+   de inmediato**: ese hash está en el repositorio.
 
-3. **Conecta Evolution API.** En tu instancia, configura el webhook:
-   - URL: `https://api.tudominio.com/api/webhooks/evolution`
-   - Header: `x-webhook-token: qp3k9nqaDSPGEul0ztTRjyDX0amGyypo`
-   - Evento: `messages.upsert`
+---
 
-4. **Conecta n8n.** Importa `n8n/cobranza-recurrente.json` y define en n8n:
-   - `CRM_API_URL` = `https://api.tudominio.com`
-   - `N8N_SERVICE_TOKEN` = `ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh`
+## 4. Conectar Evolution API
 
-   Pruébalo sin molestar clientes reales:
-   ```bash
-   curl -X POST https://api.tudominio.com/api/cobranza/procesar \
-     -H "x-service-token: ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh" \
-     -H "Content-Type: application/json" \
-     -d '{"enviarRecordatorios": false}'
-   ```
+En tu instancia de Evolution, configura el webhook:
+
+| Campo | Valor |
+|---|---|
+| URL | `https://crm.tudominio.com/api/webhooks/evolution` |
+| Header | `x-webhook-token: qp3k9nqaDSPGEul0ztTRjyDX0amGyypo` |
+| Evento | `messages.upsert` |
+
+Prueba enviando un archivo por WhatsApp desde un número registrado en la ficha
+de un cliente (en formato E.164, ej. `+525512345678`). Debe aparecer en
+**Documentos por procesar**.
+
+---
+
+## 5. Conectar n8n
+
+Importa [`n8n/cobranza-recurrente.json`](n8n/cobranza-recurrente.json) y define
+en n8n estas variables:
+
+| Variable | Valor |
+|---|---|
+| `CRM_API_URL` | `https://crm.tudominio.com` |
+| `N8N_SERVICE_TOKEN` | `ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh` |
+
+Pruébalo sin molestar a clientes reales (`enviarRecordatorios: false` recalcula
+estados pero no manda WhatsApp):
+
+```bash
+curl -X POST https://crm.tudominio.com/api/cobranza/procesar \
+  -H "x-service-token: ZVKfSXiAMtWYS3uT8HSa6HZR3qEJ1Lyh" \
+  -H "Content-Type: application/json" \
+  -d '{"enviarRecordatorios": false}'
+```
 
 ---
 
 ## Problemas frecuentes
 
-| Síntoma | Causa |
+| Síntoma | Causa y solución |
 |---|---|
-| El login falla con error de red | `NEXT_PUBLIC_API_URL` no se puso como **build argument**, o apunta mal. Reconstruye el frontend. |
-| Error de CORS en el navegador | `FRONTEND_ORIGIN` del backend no coincide **exactamente** con el dominio del panel (incluye `https://`, sin barra final). |
-| Backend reinicia en bucle | Migraciones. Mira los logs: si dice que las tablas ya existen, corriste el SQL a mano sin `npm run prisma:resolve`. |
-| `"baseDatos":"error"` en health | `DATABASE_URL` mal, o falta `?pgbouncer=true` en la cadena del pooler. |
-| Los adjuntos de WhatsApp no llegan | Revisa que el webhook apunte a `/api/webhooks/evolution` y que el token coincida. |
-| Llega el adjunto pero sin cliente | El número del cliente en su ficha debe estar en E.164 (`+525512345678`). |
+| `exec ./docker-entrypoint.sh: no such file or directory` | El script se subió con finales de línea CRLF. El `.gitattributes` del repo lo evita; si lo editaste en Windows, verifica que se guardó con LF. |
+| El contenedor reinicia en bucle | Mira los logs. Si el error es de migraciones diciendo que las tablas ya existen, corriste el SQL a mano sin `npm run prisma:resolve`. |
+| `"baseDatos":"error"` en `/api/health` | `DATABASE_URL` incorrecta, o le falta `?pgbouncer=true` a la cadena del pooler (puerto 6543). |
+| El panel carga pero el login da error de red | Revisa los logs: probablemente el backend no arrancó. El panel funciona igual porque son procesos distintos. |
+| Los adjuntos de WhatsApp no llegan | El webhook debe apuntar a `/api/webhooks/evolution` y el token coincidir con `EVOLUTION_WEBHOOK_TOKEN`. |
+| Llega el adjunto pero sin cliente asignado | El número de WhatsApp del cliente debe estar en E.164 (`+52...`) en su ficha. |
+| El build falla por memoria | Compila dos aplicaciones; si el VPS es pequeño, súbele RAM temporalmente o añade swap. |
 
 ---
 
-## Actualizar el sistema
+## Actualizar
 
-`git push` a `main` → en EasyPanel pulsa **Deploy** en cada servicio (o activa
-auto-deploy con el webhook de GitHub). Recuerda: si cambia el dominio del backend,
-el frontend necesita **rebuild**, no sólo restart.
+`git push` a `main` → **Deploy** en EasyPanel (o activa auto-deploy con el
+webhook de GitHub). Las migraciones nuevas se aplican solas al arrancar.
+
+---
+
+## Alternativa: backend y panel por separado
+
+Si algún día quieres escalarlos de forma independiente, existen
+`apps/backend/Dockerfile` y `apps/frontend/Dockerfile`. En ese caso el panel
+**sí** necesita `NEXT_PUBLIC_API_URL` como **build argument** (Next.js incrusta
+las variables `NEXT_PUBLIC_*` al compilar, no las lee en ejecución).
