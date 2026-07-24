@@ -67,9 +67,10 @@ RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3000
 
-# Comprueba el backend a través del proxy del frontend: si cualquiera
-# de los dos procesos cae, el health check falla.
+# Comprueba el sistema a través del panel. Usa el PORT real en tiempo de
+# ejecución (EasyPanel puede inyectar su propio puerto, p. ej. 80); si se
+# fijara aquí un número, el chequeo fallaría y el orquestador no enrutaría.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["./docker-entrypoint.sh"]
