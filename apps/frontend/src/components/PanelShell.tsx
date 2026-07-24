@@ -12,6 +12,7 @@ const NAV: { href: string; label: string; proximamente?: boolean }[] = [
   { href: '/polizas', label: 'Pólizas' },
   { href: '/cobranza', label: 'Cobranza' },
   { href: '/pagos', label: 'Pagos' },
+  { href: '/usuarios', label: 'Usuarios' },
 ];
 
 export default function PanelShell({ children }: { children: React.ReactNode }) {

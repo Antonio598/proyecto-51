@@ -19,6 +19,7 @@ import { PagosModule } from './pagos/pagos.module';
 import { FacturasModule } from './facturas/facturas.module';
 import { HealthModule } from './health/health.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
+import { UsuariosModule } from './usuarios/usuarios.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -43,6 +44,7 @@ import { RolesGuard } from './auth/roles.guard';
     FacturasModule,
     HealthModule,
     BootstrapModule,
+    UsuariosModule,
   ],
   providers: [
     // JWT global: todos los endpoints exigen token salvo los marcados @Public().

@@ -206,6 +206,26 @@ export const api = {
   confirmarPagoAplicado: (id: string) =>
     request<any>(`/pagos/${id}/aplicado`, { method: 'POST' }),
 
+  // ── Usuarios ──
+  listarUsuarios: () => request<any[]>('/usuarios'),
+  crearUsuario: (data: Record<string, unknown>) =>
+    request<any>('/usuarios', { method: 'POST', body: JSON.stringify(data) }),
+  cambiarMiPassword: (actual: string, nueva: string) =>
+    request<any>('/usuarios/mi-password', {
+      method: 'POST',
+      body: JSON.stringify({ actual, nueva }),
+    }),
+  resetPasswordUsuario: (id: string, nueva: string) =>
+    request<any>(`/usuarios/${id}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ nueva }),
+    }),
+  cambiarEstadoUsuario: (id: string, activo: boolean) =>
+    request<any>(`/usuarios/${id}/activo`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activo }),
+    }),
+
   // ── Notificaciones ──
   listarNotificaciones: () => request<any[]>('/notificaciones'),
   conteoNotificaciones: () => request<{ noLeidas: number }>('/notificaciones/conteo'),
