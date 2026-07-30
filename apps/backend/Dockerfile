@@ -1,5 +1,5 @@
 # Backend NestJS + Prisma. Contexto de build = raíz del monorepo.
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 COPY apps/backend/package.json apps/backend/package.json
@@ -10,7 +10,7 @@ COPY apps/backend ./apps/backend
 RUN npx prisma generate --schema prisma/schema.prisma
 RUN npm run build --workspace @crm/backend
 
-FROM node:20-alpine AS run
+FROM node:22-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules

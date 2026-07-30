@@ -11,7 +11,7 @@
 # ── Etapa 1 — Dependencias ───────────────────────────────────────────────
 # Se instalan las de AMBOS workspaces de una vez, para que `npm ci` cuadre
 # exactamente con package-lock.json (si falta un workspace, npm ci falla).
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 # Prisma necesita openssl y libc6-compat en Alpine (musl). Sin esto el motor
 # de consultas no carga y el backend muere al arrancar, en bucle.
 RUN apk add --no-cache openssl libc6-compat
@@ -42,7 +42,7 @@ RUN npm run build --workspace @crm/frontend
 
 
 # ── Etapa 3 — Runtime ────────────────────────────────────────────────────
-FROM node:20-alpine AS run
+FROM node:22-alpine AS run
 RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
 
