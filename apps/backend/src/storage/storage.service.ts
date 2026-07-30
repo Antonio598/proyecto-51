@@ -62,18 +62,38 @@ export class StorageService {
     const limpio = nombreArchivo.replace(/[^\w.\-]/g, '_');
     const storageKey = `${carpeta}/${Date.now()}-${limpio}`;
 
-    const { error } = await this.client.storage
-      .from(this.bucket)
-      .upload(storageKey, contenido, {
+    let error: { message: string } | null = null;
+    try {
+      ({ error } = await this.client.storage.from(this.bucket).upload(storageKey, contenido, {
         contentType: mime ?? 'application/octet-stream',
         upsert: false,
-      });
+      }));
+    } catch (e) {
+      // supabase-js puede lanzar (p. ej. si no alcanza el servidor) en vez de
+      // devolver { error }. Sin este catch, el fallo llega como un 500 genérico.
+      error = { message: (e as Error).message };
+    }
 
     if (error) {
-      this.logger.error(`Error al subir ${storageKey}: ${error.message}`);
-      throw new InternalServerErrorException('No se pudo guardar el documento');
+      this.logger.error(`Error al subir "${storageKey}" al bucket "${this.bucket}": ${error.message}`);
+      throw new InternalServerErrorException(this.mensajeAmigable(error.message));
     }
     return storageKey;
+  }
+
+  /** Traduce los fallos habituales de Supabase Storage a algo accionable. */
+  private mensajeAmigable(mensaje: string): string {
+    const m = mensaje.toLowerCase();
+    if (m.includes('bucket not found')) {
+      return `El bucket "${this.bucket}" no existe en Supabase. Créalo en Storage (privado) y vuelve a intentar.`;
+    }
+    if (m.includes('invalid') && m.includes('key')) {
+      return 'La SUPABASE_SERVICE_ROLE_KEY no es válida. Revisa esa variable en el servidor.';
+    }
+    if (m.includes('fetch failed') || m.includes('econnrefused') || m.includes('enotfound')) {
+      return 'No se pudo contactar a Supabase. Revisa SUPABASE_URL y que el servicio esté arriba.';
+    }
+    return `No se pudo guardar el documento: ${mensaje}`;
   }
 
   /** Descarga el contenido binario de un documento almacenado. */
