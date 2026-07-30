@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 
@@ -8,6 +8,7 @@ interface DocumentoRow {
   id: string;
   nombreOriginal?: string;
   mime?: string;
+  origen?: string;
   createdAt: string;
   cliente?: { id: string; razonSocial: string } | null;
   extraccion?: { id: string; estadoRevision: string } | null;
@@ -22,8 +23,13 @@ const ESTADO_LABEL: Record<string, string> = {
 
 export default function BandejaPage() {
   const [docs, setDocs] = useState<DocumentoRow[]>([]);
+  const [clientes, setClientes] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
+  const [mensaje, setMensaje] = useState('');
+  const [subiendo, setSubiendo] = useState(false);
+  const [clienteSubida, setClienteSubida] = useState('');
+  const inputArchivo = useRef<HTMLInputElement>(null);
 
   async function cargar() {
     setCargando(true);
@@ -39,7 +45,29 @@ export default function BandejaPage() {
 
   useEffect(() => {
     cargar();
+    api
+      .listarClientes()
+      .then(setClientes)
+      .catch(() => undefined);
   }, []);
+
+  async function subir(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0];
+    if (!archivo) return;
+    setSubiendo(true);
+    setError('');
+    setMensaje('');
+    try {
+      await api.subirDocumento(archivo, clienteSubida || undefined);
+      setMensaje('Documento subido. Ya aparece en la bandeja para extraer.');
+      await cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al subir');
+    } finally {
+      setSubiendo(false);
+      if (inputArchivo.current) inputArchivo.current.value = '';
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -47,7 +75,8 @@ export default function BandejaPage() {
         <div>
           <h1 className="text-xl font-semibold">Documentos por procesar</h1>
           <p className="text-sm text-slate-500">
-            Archivos recibidos por WhatsApp, asociados automáticamente al cliente por su número.
+            Los recibidos por WhatsApp se asocian solos al cliente; también puedes subir archivos a
+            mano.
           </p>
         </div>
         <button onClick={cargar} className="rounded border px-3 py-1.5 text-sm">
@@ -55,6 +84,35 @@ export default function BandejaPage() {
         </button>
       </div>
 
+      {/* Subida manual */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-white p-4 shadow">
+        <span className="text-sm font-medium text-slate-700">Subir documento:</span>
+        <select
+          value={clienteSubida}
+          onChange={(e) => setClienteSubida(e.target.value)}
+          className="rounded border border-slate-300 px-3 py-2 text-sm"
+        >
+          <option value="">Sin asignar (elegir luego)</option>
+          {clientes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.razonSocial}
+            </option>
+          ))}
+        </select>
+        <input
+          ref={inputArchivo}
+          type="file"
+          accept=".xlsx,.xls,.csv,application/pdf,image/*"
+          onChange={subir}
+          disabled={subiendo}
+          className="text-sm"
+        />
+        {subiendo && <span className="text-sm text-slate-500">Subiendo…</span>}
+      </div>
+
+      {mensaje && (
+        <div className="rounded bg-green-50 px-3 py-2 text-sm text-green-800">{mensaje}</div>
+      )}
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       <div className="overflow-hidden rounded-lg bg-white shadow">
@@ -63,7 +121,7 @@ export default function BandejaPage() {
             <tr>
               <th className="px-4 py-2">Archivo</th>
               <th className="px-4 py-2">Cliente</th>
-              <th className="px-4 py-2">Remitente</th>
+              <th className="px-4 py-2">Origen</th>
               <th className="px-4 py-2">Recibido</th>
               <th className="px-4 py-2">Estado</th>
             </tr>
@@ -98,8 +156,20 @@ export default function BandejaPage() {
                     )}
                   </td>
                   <td className="px-4 py-2">
-                    {d.metadata?.pushName ?? '—'}
-                    <div className="text-xs text-slate-400">{d.metadata?.numero}</div>
+                    {d.origen === 'manual_upload' ? (
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                        Subido a mano
+                      </span>
+                    ) : (
+                      <>
+                        <span className="rounded bg-green-50 px-2 py-0.5 text-xs text-green-700">
+                          WhatsApp
+                        </span>
+                        <div className="text-xs text-slate-400">
+                          {d.metadata?.pushName} {d.metadata?.numero}
+                        </div>
+                      </>
+                    )}
                   </td>
                   <td className="px-4 py-2">
                     {new Date(d.createdAt).toLocaleString('es-MX')}

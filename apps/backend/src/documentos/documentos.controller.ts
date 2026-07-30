@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Rol } from '@prisma/client';
 import { DocumentosService } from './documentos.service';
 import { AprobarExtraccionDto } from './dto/aprobar.dto';
@@ -13,6 +22,25 @@ export class DocumentosController {
   @Get('bandeja')
   bandeja() {
     return this.documentos.bandeja();
+  }
+
+  /**
+   * Subida manual de un documento (Excel, PDF o imagen). Cae en la bandeja
+   * junto con los recibidos por WhatsApp y sigue el mismo flujo de extracción.
+   */
+  @Roles(Rol.captura, Rol.tecnico, Rol.administracion, Rol.admin)
+  @Post('subir')
+  @UseInterceptors(FileInterceptor('archivo'))
+  subir(
+    @UploadedFile() archivo: Express.Multer.File,
+    @Body('clienteId') clienteId: string | undefined,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.documentos.subirManual(
+      { buffer: archivo.buffer, nombre: archivo.originalname, mime: archivo.mimetype },
+      clienteId || undefined,
+      user.userId,
+    );
   }
 
   @Get(':id')

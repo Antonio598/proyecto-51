@@ -1,5 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { EstadoRevision, OrigenDocumento, Prisma, TipoUnidad } from '@prisma/client';
+import {
+  EstadoRevision,
+  OrigenDocumento,
+  Prisma,
+  TipoDocumento,
+  TipoUnidad,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
@@ -19,16 +25,70 @@ export class DocumentosService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Bandeja: documentos recibidos por WhatsApp que aún no se procesan. */
+  /**
+   * Bandeja: documentos por procesar, tanto los recibidos por WhatsApp como
+   * los subidos manualmente por el equipo. Los generados por el sistema
+   * (comparativos, propuestas…) no aparecen aquí.
+   */
   bandeja() {
     return this.prisma.documento.findMany({
-      where: { origen: OrigenDocumento.whatsapp, procesado: false },
+      where: {
+        origen: { in: [OrigenDocumento.whatsapp, OrigenDocumento.manual_upload] },
+        procesado: false,
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         cliente: { select: { id: true, razonSocial: true } },
         extraccion: { select: { id: true, estadoRevision: true } },
       },
     });
+  }
+
+  /**
+   * Subida manual de un documento (p. ej. un archivo que llegó por correo).
+   * Cae en la misma bandeja y sigue el mismo flujo de extracción y revisión.
+   */
+  async subirManual(
+    archivo: { buffer: Buffer; nombre: string; mime: string },
+    clienteId: string | undefined,
+    actorUserId: string,
+  ) {
+    if (clienteId) {
+      const cliente = await this.prisma.cliente.findUnique({ where: { id: clienteId } });
+      if (!cliente) throw new NotFoundException('Cliente no encontrado');
+    }
+
+    const carpeta = clienteId ? `clientes/${clienteId}/recibidos` : 'sin-asignar';
+    const storageKey = await this.storage.subir(
+      carpeta,
+      archivo.nombre,
+      archivo.buffer,
+      archivo.mime,
+    );
+
+    const documento = await this.prisma.documento.create({
+      data: {
+        clienteId: clienteId ?? null,
+        tipo: TipoDocumento.recibido,
+        origen: OrigenDocumento.manual_upload,
+        storageKey,
+        mime: archivo.mime,
+        nombreOriginal: archivo.nombre,
+        procesado: false,
+        metadata: { subidoPor: actorUserId },
+      },
+    });
+
+    await this.audit.registrar({
+      entidad: 'Documento',
+      entidadId: documento.id,
+      accion: 'subir_manual',
+      actorUserId,
+      diff: { clienteId: clienteId ?? null, nombre: archivo.nombre },
+    });
+
+    this.logger.log(`Documento ${documento.id} subido manualmente por ${actorUserId}`);
+    return documento;
   }
 
   async obtener(id: string) {

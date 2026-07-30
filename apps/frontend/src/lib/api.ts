@@ -111,6 +111,9 @@ export const api = {
 
   // ── Documentos por procesar y extracción IA ──
   bandejaDocumentos: () => request<any[]>('/documentos/bandeja'),
+  /** Sube un documento manualmente; cae en la misma bandeja de procesamiento. */
+  subirDocumento: (archivo: File, clienteId?: string) =>
+    upload<any>('/documentos/subir', archivo, clienteId ? { clienteId } : {}),
   obtenerDocumento: (id: string) => request<any>(`/documentos/${id}`),
   enlaceDocumento: (id: string) => request<{ url: string }>(`/documentos/${id}/enlace`),
   extraerDocumento: (id: string) => request<any>(`/documentos/${id}/extraer`, { method: 'POST' }),
