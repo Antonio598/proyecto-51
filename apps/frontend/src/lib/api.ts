@@ -89,6 +89,40 @@ async function upload<T>(path: string, archivo: File, campos: Record<string, str
   return res.json() as Promise<T>;
 }
 
+/**
+ * Envío del portal público de autoservicio. No usa token (es público) y admite
+ * varios archivos bajo el campo `archivos`, como espera el backend.
+ */
+export async function enviarPortal(datos: {
+  telefono: string;
+  email: string;
+  nombre?: string;
+  archivos: File[];
+}): Promise<{ recibidos: number; clienteNuevo: boolean }> {
+  const form = new FormData();
+  form.append('telefono', datos.telefono);
+  form.append('email', datos.email);
+  if (datos.nombre) form.append('nombre', datos.nombre);
+  for (const archivo of datos.archivos) form.append('archivos', archivo);
+
+  const res = await fetch(`${API_URL}/api/portal/subir`, { method: 'POST', body: form });
+  if (!res.ok) {
+    let mensaje = `Error ${res.status}`;
+    if (res.status === 429) {
+      mensaje = 'Has hecho demasiados envíos seguidos. Espera unos minutos e inténtalo de nuevo.';
+    } else {
+      try {
+        const body = await res.json();
+        mensaje = Array.isArray(body.message) ? body.message.join(', ') : body.message ?? mensaje;
+      } catch {
+        /* respuesta sin JSON */
+      }
+    }
+    throw new Error(mensaje);
+  }
+  return res.json();
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ accessToken: string; refreshToken: string; user: UsuarioSesion }>('/auth/login', {

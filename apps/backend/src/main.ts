@@ -49,6 +49,10 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
+  // Detrás del proxy de EasyPanel: confiar en X-Forwarded-For para que el
+  // límite de intentos del portal cuente la IP real del cliente, no la del proxy.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   // Prefijo global de la API
   app.setGlobalPrefix('api');
 

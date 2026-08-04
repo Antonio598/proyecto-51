@@ -33,7 +33,13 @@ export class DocumentosService {
   bandeja() {
     return this.prisma.documento.findMany({
       where: {
-        origen: { in: [OrigenDocumento.whatsapp, OrigenDocumento.manual_upload] },
+        origen: {
+          in: [
+            OrigenDocumento.whatsapp,
+            OrigenDocumento.manual_upload,
+            OrigenDocumento.portal,
+          ],
+        },
         procesado: false,
       },
       orderBy: { createdAt: 'desc' },

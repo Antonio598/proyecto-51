@@ -12,7 +12,7 @@ interface DocumentoRow {
   createdAt: string;
   cliente?: { id: string; razonSocial: string } | null;
   extraccion?: { id: string; estadoRevision: string } | null;
-  metadata?: { numero?: string; pushName?: string };
+  metadata?: { numero?: string; pushName?: string; telefono?: string; email?: string };
 }
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -160,6 +160,15 @@ export default function BandejaPage() {
                       <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                         Subido a mano
                       </span>
+                    ) : d.origen === 'portal' ? (
+                      <>
+                        <span className="rounded bg-purple-50 px-2 py-0.5 text-xs text-purple-700">
+                          Portal
+                        </span>
+                        <div className="text-xs text-slate-400">
+                          {d.metadata?.telefono} {d.metadata?.email}
+                        </div>
+                      </>
                     ) : (
                       <>
                         <span className="rounded bg-green-50 px-2 py-0.5 text-xs text-green-700">

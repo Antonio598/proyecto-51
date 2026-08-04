@@ -32,6 +32,7 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.4.4",
+    "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5.22.0",
     "@supabase/supabase-js": "^2.45.4",
     "bcryptjs": "^2.4.3",

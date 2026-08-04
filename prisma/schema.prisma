@@ -59,6 +59,7 @@ enum OrigenDocumento {
   whatsapp
   generado
   manual_upload
+  portal
 }
 
 enum EstadoRevision {
