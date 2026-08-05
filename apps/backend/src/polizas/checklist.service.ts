@@ -165,16 +165,33 @@ export class ChecklistService {
       { etiqueta: 'Código postal', valor: fiscales.codigoPostal ?? '—' },
       { etiqueta: 'Régimen fiscal', valor: fiscales.regimen ?? '—' },
       { etiqueta: 'Uso de CFDI', valor: fiscales.usoCfdi ?? '—' },
+      { etiqueta: 'Asegurado', valor: u.aseguradoNombre ?? cliente.razonSocial },
       { etiqueta: 'Número de serie (VIN)', valor: u.vin ?? 'FALTA' },
       { etiqueta: 'Tipo de unidad', valor: u.tipo },
       { etiqueta: 'Marca', valor: u.marca ?? '—' },
-      { etiqueta: 'Modelo', valor: u.modelo ?? '—' },
-      { etiqueta: 'Año', valor: u.anio ? String(u.anio) : '—' },
       { etiqueta: 'Descripción', valor: u.descripcion ?? '—' },
+      { etiqueta: 'Año', valor: u.anio ? String(u.anio) : '—' },
+      { etiqueta: 'Número económico', valor: u.numeroEconomico ?? '—' },
+      { etiqueta: 'Placas', valor: u.placas ?? 'FALTA' },
+      { etiqueta: 'Número de motor', valor: u.numeroMotor ?? '—' },
+      { etiqueta: 'Uso de la unidad', valor: u.usoUnidad ?? '—' },
+      { etiqueta: 'Tipo de cobertura', valor: u.tipoCobertura ?? '—' },
+      { etiqueta: 'Doble remolque', valor: u.dobleRemolque ? 'Sí' : 'No' },
       { etiqueta: 'Tipo de carga que transporta', valor: u.tipoCarga ?? '—' },
       {
         etiqueta: 'Valor asegurado de la unidad',
         valor: formatearMoneda(u.valorAsegurado ? Number(u.valorAsegurado) : null),
+      },
+      { etiqueta: 'Adaptación', valor: u.tipoAdaptacion ?? 'Sin adaptación' },
+      {
+        etiqueta: 'Cobertura de la adaptación',
+        valor: u.tipoAdaptacion ? u.coberturaAdaptacion ?? u.tipoCobertura ?? '—' : '—',
+      },
+      {
+        etiqueta: 'Suma asegurada de la adaptación',
+        valor: u.tipoAdaptacion
+          ? formatearMoneda(u.sumaAseguradaAdaptacion ? Number(u.sumaAseguradaAdaptacion) : null)
+          : '—',
       },
       ...ORDEN_COBERTURAS.map((c) => ({
         etiqueta: ETIQUETAS_COBERTURA[c],

@@ -157,13 +157,24 @@ model Unidad {
   clienteId      String
   cliente        Cliente    @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   tipo           TipoUnidad @default(otro)
+  aseguradoNombre String?   // nombre del asegurado que aparece en el layout
   vin            String?    // número de serie
   anio           Int?
   marca          String?
   modelo         String?
-  descripcion    String?
-  tipoCarga      String?    // tipo de carga que transporta
-  valorAsegurado Decimal?   @db.Decimal(14, 2)
+  descripcion    String?    // descripción completa de la unidad
+  numeroEconomico String?
+  placas         String?
+  numeroMotor    String?
+  tipoCarga      String?    // tipo de carga / descripción de la mercancía
+  usoUnidad      String?    // particular | carga privada | carga federal
+  tipoCobertura  String?    // amplia | limitada | rc | ...
+  dobleRemolque  Boolean    @default(false)
+  valorAsegurado Decimal?   @db.Decimal(14, 2) // suma asegurada de la unidad
+  // Adaptación / equipo especial montado sobre la unidad.
+  tipoAdaptacion         String?
+  coberturaAdaptacion    String?   // se liga a la cobertura de la unidad
+  sumaAseguradaAdaptacion Decimal? @db.Decimal(14, 2)
   // Absorbe cualquier columna del "vaciado en Excel" del despacho sin cambiar el esquema.
   camposExtra    Json?
   activo         Boolean    @default(true)

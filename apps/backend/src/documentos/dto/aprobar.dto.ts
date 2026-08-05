@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNumber,
@@ -16,6 +17,10 @@ export class UnidadCorregidaDto {
   @IsOptional()
   @IsEnum(TipoUnidad)
   tipo?: TipoUnidad;
+
+  @IsOptional()
+  @IsString()
+  aseguradoNombre?: string | null;
 
   @IsOptional()
   @IsString()
@@ -42,13 +47,51 @@ export class UnidadCorregidaDto {
 
   @IsOptional()
   @IsString()
+  numeroEconomico?: string | null;
+
+  @IsOptional()
+  @IsString()
+  placas?: string | null;
+
+  @IsOptional()
+  @IsString()
+  numeroMotor?: string | null;
+
+  @IsOptional()
+  @IsString()
   tipoCarga?: string | null;
+
+  @IsOptional()
+  @IsString()
+  usoUnidad?: string | null;
+
+  @IsOptional()
+  @IsString()
+  tipoCobertura?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  dobleRemolque?: boolean;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   valorAsegurado?: number | null;
+
+  @IsOptional()
+  @IsString()
+  tipoAdaptacion?: string | null;
+
+  @IsOptional()
+  @IsString()
+  coberturaAdaptacion?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  sumaAseguradaAdaptacion?: number | null;
 }
 
 export class AprobarExtraccionDto {

@@ -7,39 +7,40 @@ import { api } from '@/lib/api';
 
 const TIPOS = ['camion', 'tractocamion', 'remolque', 'otro'];
 
-interface UnidadForm {
-  tipo: string;
-  vin: string;
-  anio: string;
-  marca: string;
-  modelo: string;
-  descripcion: string;
-  tipoCarga: string;
-  valorAsegurado: string;
-}
+// Todos los campos son texto en el formulario; se convierten al enviar.
+type UnidadForm = Record<string, string>;
 
-const CAMPOS: Array<{ key: keyof UnidadForm; label: string; ancho: string }> = [
-  { key: 'tipo', label: 'Tipo', ancho: 'w-36' },
-  { key: 'vin', label: 'VIN / Serie', ancho: 'w-48' },
-  { key: 'anio', label: 'Año', ancho: 'w-20' },
-  { key: 'marca', label: 'Marca', ancho: 'w-32' },
-  { key: 'modelo', label: 'Modelo', ancho: 'w-32' },
-  { key: 'descripcion', label: 'Descripción', ancho: 'w-56' },
-  { key: 'tipoCarga', label: 'Tipo de carga', ancho: 'w-40' },
-  { key: 'valorAsegurado', label: 'Valor asegurado', ancho: 'w-36' },
+type TipoCampo = 'texto' | 'numero' | 'moneda' | 'tipo' | 'bool';
+
+const CAMPOS: Array<{ key: string; label: string; tipo?: TipoCampo }> = [
+  { key: 'aseguradoNombre', label: 'Asegurado' },
+  { key: 'tipo', label: 'Tipo de unidad', tipo: 'tipo' },
+  { key: 'marca', label: 'Marca' },
+  { key: 'descripcion', label: 'Descripción completa' },
+  { key: 'anio', label: 'Año', tipo: 'numero' },
+  { key: 'vin', label: 'Serie / VIN' },
+  { key: 'numeroEconomico', label: 'Número económico' },
+  { key: 'valorAsegurado', label: 'Suma asegurada', tipo: 'moneda' },
+  { key: 'placas', label: 'Placas' },
+  { key: 'numeroMotor', label: 'Número de motor' },
+  { key: 'tipoCobertura', label: 'Tipo de cobertura' },
+  { key: 'tipoCarga', label: 'Tipo de carga' },
+  { key: 'usoUnidad', label: 'Uso de la unidad' },
+  { key: 'dobleRemolque', label: 'Doble remolque', tipo: 'bool' },
+  { key: 'tipoAdaptacion', label: 'Adaptación' },
+  { key: 'coberturaAdaptacion', label: 'Cobertura de adaptación' },
+  { key: 'sumaAseguradaAdaptacion', label: 'Suma asegurada adaptación', tipo: 'moneda' },
 ];
 
 function aForm(u: Record<string, unknown>): UnidadForm {
-  return {
-    tipo: (u.tipo as string) ?? 'otro',
-    vin: (u.vin as string) ?? '',
-    anio: u.anio != null ? String(u.anio) : '',
-    marca: (u.marca as string) ?? '',
-    modelo: (u.modelo as string) ?? '',
-    descripcion: (u.descripcion as string) ?? '',
-    tipoCarga: (u.tipoCarga as string) ?? '',
-    valorAsegurado: u.valorAsegurado != null ? String(u.valorAsegurado) : '',
-  };
+  const f: UnidadForm = {};
+  for (const c of CAMPOS) {
+    const v = u[c.key];
+    if (c.tipo === 'bool') f[c.key] = v ? 'si' : 'no';
+    else f[c.key] = v != null ? String(v) : '';
+  }
+  if (!f.tipo) f.tipo = 'otro';
+  return f;
 }
 
 export default function RevisionPage() {
@@ -108,17 +109,27 @@ export default function RevisionPage() {
     setOcupado(true);
     setError('');
     try {
+      const num = (v: string) => (v ? Number(String(v).replace(/[,$\s]/g, '')) : null);
       await api.aprobarExtraccion(id, {
         clienteId: clienteId || undefined,
         unidades: unidades.map((u) => ({
-          tipo: u.tipo,
-          vin: u.vin || null,
-          anio: u.anio ? Number(u.anio) : null,
+          tipo: u.tipo || 'otro',
+          aseguradoNombre: u.aseguradoNombre || null,
           marca: u.marca || null,
-          modelo: u.modelo || null,
           descripcion: u.descripcion || null,
+          anio: num(u.anio),
+          vin: u.vin || null,
+          numeroEconomico: u.numeroEconomico || null,
+          valorAsegurado: num(u.valorAsegurado),
+          placas: u.placas || null,
+          numeroMotor: u.numeroMotor || null,
+          tipoCobertura: u.tipoCobertura || null,
           tipoCarga: u.tipoCarga || null,
-          valorAsegurado: u.valorAsegurado ? Number(u.valorAsegurado) : null,
+          usoUnidad: u.usoUnidad || null,
+          dobleRemolque: u.dobleRemolque === 'si',
+          tipoAdaptacion: u.tipoAdaptacion || null,
+          coberturaAdaptacion: u.coberturaAdaptacion || null,
+          sumaAseguradaAdaptacion: num(u.sumaAseguradaAdaptacion),
         })),
       });
       router.push('/documentos');
@@ -228,59 +239,69 @@ export default function RevisionPage() {
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-lg bg-white shadow">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-100 text-left text-slate-600">
-                <tr>
-                  <th className="px-2 py-2">#</th>
-                  {CAMPOS.map((c) => (
-                    <th key={c.key} className="px-2 py-2">
-                      {c.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {unidades.map((u, i) => (
-                  <tr key={i} className="border-t align-top">
-                    <td className="px-2 py-2 text-slate-400">{i + 1}</td>
-                    {CAMPOS.map((c) => {
-                      const dudoso = camposDudosos[i]?.includes(c.key);
-                      const clase = `w-full rounded border px-2 py-1 text-sm ${
-                        dudoso ? 'border-amber-400 bg-amber-50' : 'border-slate-200'
-                      }`;
-                      return (
-                        <td key={c.key} className={`px-2 py-2 ${c.ancho}`}>
-                          {c.key === 'tipo' ? (
-                            <select
-                              value={u.tipo}
-                              onChange={(e) => editar(i, 'tipo', e.target.value)}
-                              className={clase}
-                            >
-                              {TIPOS.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              value={u[c.key]}
-                              onChange={(e) => editar(i, c.key, e.target.value)}
-                              placeholder={dudoso ? 'Verificar' : ''}
-                              className={clase}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-4">
+            {unidades.map((u, i) => (
+              <div key={i} className="rounded-lg bg-white p-4 shadow">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">Unidad {i + 1}</h3>
+                  {camposDudosos[i]?.length > 0 && (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      {camposDudosos[i].length} por verificar
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {CAMPOS.map((c) => {
+                    const dudoso = camposDudosos[i]?.includes(c.key);
+                    const clase = `mt-1 w-full rounded border px-2 py-1.5 text-sm ${
+                      dudoso ? 'border-amber-400 bg-amber-50' : 'border-slate-200'
+                    }`;
+                    return (
+                      <div key={c.key}>
+                        <label className="block text-xs font-medium text-slate-600">
+                          {c.label}
+                          {dudoso && <span className="ml-1 text-amber-600">• verificar</span>}
+                        </label>
+                        {c.tipo === 'tipo' ? (
+                          <select
+                            value={u.tipo}
+                            onChange={(e) => editar(i, 'tipo', e.target.value)}
+                            className={`${clase} capitalize`}
+                          >
+                            {TIPOS.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        ) : c.tipo === 'bool' ? (
+                          <select
+                            value={u[c.key]}
+                            onChange={(e) => editar(i, c.key, e.target.value)}
+                            className={clase}
+                          >
+                            <option value="no">No</option>
+                            <option value="si">Sí</option>
+                          </select>
+                        ) : (
+                          <input
+                            value={u[c.key] ?? ''}
+                            onChange={(e) => editar(i, c.key, e.target.value)}
+                            inputMode={
+                              c.tipo === 'numero' || c.tipo === 'moneda' ? 'decimal' : undefined
+                            }
+                            className={clase}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="sticky bottom-0 flex justify-end gap-2 border-t bg-slate-50 py-3">
             <button
               onClick={aprobar}
               disabled={ocupado || !clienteId}

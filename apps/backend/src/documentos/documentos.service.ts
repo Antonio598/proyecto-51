@@ -208,13 +208,23 @@ export class DocumentosService {
             data: {
               clienteId,
               tipo: (u.tipo as TipoUnidad) ?? TipoUnidad.otro,
+              aseguradoNombre: u.aseguradoNombre ?? null,
               vin: u.vin ?? null,
               anio: u.anio ?? null,
               marca: u.marca ?? null,
               modelo: u.modelo ?? null,
               descripcion: u.descripcion ?? null,
+              numeroEconomico: u.numeroEconomico ?? null,
+              placas: u.placas ?? null,
+              numeroMotor: u.numeroMotor ?? null,
               tipoCarga: u.tipoCarga ?? null,
+              usoUnidad: u.usoUnidad ?? null,
+              tipoCobertura: u.tipoCobertura ?? null,
+              dobleRemolque: u.dobleRemolque ?? false,
               valorAsegurado: u.valorAsegurado ?? null,
+              tipoAdaptacion: u.tipoAdaptacion ?? null,
+              coberturaAdaptacion: u.coberturaAdaptacion ?? null,
+              sumaAseguradaAdaptacion: u.sumaAseguradaAdaptacion ?? null,
               camposExtra: { origenDocumentoId: documentoId } as Prisma.InputJsonValue,
             },
           }),
@@ -305,11 +315,21 @@ export class DocumentosService {
 
 export interface UnidadCorregida {
   tipo?: string;
+  aseguradoNombre?: string | null;
   vin?: string | null;
   anio?: number | null;
   marca?: string | null;
   modelo?: string | null;
   descripcion?: string | null;
+  numeroEconomico?: string | null;
+  placas?: string | null;
+  numeroMotor?: string | null;
   tipoCarga?: string | null;
+  usoUnidad?: string | null;
+  tipoCobertura?: string | null;
+  dobleRemolque?: boolean;
   valorAsegurado?: number | null;
+  tipoAdaptacion?: string | null;
+  coberturaAdaptacion?: string | null;
+  sumaAseguradaAdaptacion?: number | null;
 }
