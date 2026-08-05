@@ -126,6 +126,7 @@ export class PortalService {
             aseguradora: { select: { nombre: true } },
             unidad: { select: { marca: true, modelo: true, vin: true, numeroEconomico: true } },
             cortes: { orderBy: { fechaProximoPago: 'asc' } },
+            facturas: { orderBy: { createdAt: 'desc' } },
           },
         },
       },
@@ -153,6 +154,72 @@ export class PortalService {
         })),
     );
 
+    // Documentos descargables: carátulas de póliza (pdfDocId), facturas y
+    // estados de cuenta (desgloses). Resolvemos storageKey → URL firmada.
+    const facturasRaw = cliente.polizas.flatMap((p) =>
+      p.facturas.map((f) => ({
+        tipo: f.tipo,
+        fecha: f.createdAt,
+        aseguradora: p.aseguradora.nombre,
+        storageDocId: f.storageDocId,
+      })),
+    );
+    const desgloses = await this.prisma.documento.findMany({
+      where: { clienteId: cliente.id, tipo: TipoDocumento.desglose },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const idsDoc = [
+      ...cliente.polizas.map((p) => p.pdfDocId),
+      ...facturasRaw.map((f) => f.storageDocId),
+    ].filter((v): v is string => !!v);
+    const docs = idsDoc.length
+      ? await this.prisma.documento.findMany({ where: { id: { in: idsDoc } } })
+      : [];
+    const keyPorDoc = new Map(docs.map((d) => [d.id, d.storageKey]));
+
+    const firmar = async (storageKey?: string | null) => {
+      if (!storageKey) return null;
+      try {
+        return await this.storage.urlFirmada(storageKey);
+      } catch {
+        return null;
+      }
+    };
+
+    const [polizas, facturas, estadosCuenta] = await Promise.all([
+      Promise.all(
+        cliente.polizas.map(async (p) => ({
+          id: p.id,
+          folio: p.folio,
+          estado: p.estado,
+          vigenciaInicio: p.vigenciaInicio,
+          vigenciaFin: p.vigenciaFin,
+          aseguradora: p.aseguradora.nombre,
+          unidad: [p.unidad.marca, p.unidad.modelo].filter(Boolean).join(' ') || p.unidad.vin,
+          urlNube: p.urlNube ?? null,
+          pdfUrl: await firmar(p.pdfDocId ? keyPorDoc.get(p.pdfDocId) : null),
+        })),
+      ),
+      Promise.all(
+        facturasRaw
+          .filter((f) => f.storageDocId)
+          .map(async (f) => ({
+            tipo: f.tipo,
+            fecha: f.fecha,
+            aseguradora: f.aseguradora,
+            url: await firmar(keyPorDoc.get(f.storageDocId!)),
+          })),
+      ),
+      Promise.all(
+        desgloses.map(async (d) => ({
+          nombre: d.nombreOriginal ?? 'Desglose de costos',
+          fecha: d.createdAt,
+          url: await firmar(d.storageKey),
+        })),
+      ),
+    ]);
+
     return {
       cliente: {
         razonSocial: cliente.razonSocial,
@@ -161,16 +228,10 @@ export class PortalService {
         telefono: cliente.whatsappNumber,
       },
       unidades: cliente.unidades,
-      polizas: cliente.polizas.map((p) => ({
-        id: p.id,
-        folio: p.folio,
-        estado: p.estado,
-        vigenciaInicio: p.vigenciaInicio,
-        vigenciaFin: p.vigenciaFin,
-        aseguradora: p.aseguradora.nombre,
-        unidad: [p.unidad.marca, p.unidad.modelo].filter(Boolean).join(' ') || p.unidad.vin,
-      })),
+      polizas,
       cobranza,
+      facturas: facturas.filter((f) => f.url),
+      estadosCuenta: estadosCuenta.filter((e) => e.url),
     };
   }
 

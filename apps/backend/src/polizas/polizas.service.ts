@@ -118,6 +118,114 @@ export class PolizasService {
     return { creadas: polizas.length, polizas };
   }
 
+  /**
+   * Alta de pólizas por LIGA de nube (Dropbox). El técnico baja los PDF del
+   * portal de la aseguradora, los sube a su nube y aquí registra la liga.
+   * Crea una póliza por unidad activa (todas comparten la misma liga) sin
+   * depender de que exista una propuesta en el expediente; si la hay, usa su
+   * prima como prellenado. Las pólizas quedan `pendiente_emision` para emitir.
+   */
+  async crearDesdeEnlace(
+    expedienteId: string,
+    datos: { aseguradoraId: string; urlNube: string; vigenciaInicio?: Date },
+    actorUserId: string,
+  ) {
+    const expediente = await this.prisma.expediente.findUnique({
+      where: { id: expedienteId },
+      include: {
+        cliente: { include: { unidades: { where: { activo: true } } } },
+        propuestasAseguradora: { where: { aseguradoraId: datos.aseguradoraId } },
+        polizas: true,
+      },
+    });
+    if (!expediente) throw new NotFoundException('Expediente no encontrado');
+
+    const estadosValidos: EstadoExpediente[] = [
+      EstadoExpediente.aprobado,
+      EstadoExpediente.enviado_a_cliente,
+    ];
+    if (!estadosValidos.includes(expediente.estado)) {
+      throw new BadRequestException(
+        'El expediente debe estar aprobado antes de registrar pólizas',
+      );
+    }
+    if (expediente.cliente.unidades.length === 0) {
+      throw new BadRequestException('El cliente no tiene unidades activas que asegurar');
+    }
+
+    const unidades = expediente.cliente.unidades;
+    // Prima de la propuesta (si existe) repartida entre unidades, como prellenado.
+    const propuesta = expediente.propuestasAseguradora[0];
+    const primaTotal = propuesta?.prima ? Number(propuesta.prima) : 0;
+    const primaPorUnidad = primaTotal > 0 ? primaTotal / unidades.length : null;
+
+    const vigenciaInicio = datos.vigenciaInicio ?? null;
+    let vigenciaFin: Date | null = null;
+    if (vigenciaInicio) {
+      vigenciaFin = new Date(vigenciaInicio);
+      vigenciaFin.setFullYear(vigenciaFin.getFullYear() + 1);
+    }
+
+    const yaEmitidas = new Set(expediente.polizas.map((p) => p.unidadId));
+    const nuevas = unidades.filter((u) => !yaEmitidas.has(u.id));
+    if (nuevas.length === 0) {
+      throw new BadRequestException('Todas las unidades activas ya tienen póliza en este expediente');
+    }
+
+    const polizas = await this.prisma.$transaction(
+      nuevas.map((unidad) =>
+        this.prisma.poliza.create({
+          data: {
+            clienteId: expediente.clienteId,
+            unidadId: unidad.id,
+            aseguradoraId: datos.aseguradoraId,
+            expedienteId,
+            vigenciaInicio,
+            vigenciaFin,
+            prima: primaPorUnidad as never,
+            urlNube: datos.urlNube,
+            estado: EstadoPoliza.pendiente_emision,
+          },
+        }),
+      ),
+    );
+
+    await this.notificaciones.notificarRol({
+      rol: Rol.captura,
+      titulo: 'Pólizas registradas por liga',
+      mensaje: `${polizas.length} póliza(s) de ${expediente.cliente.razonSocial} se registraron con su liga de nube y están listas para emitir.`,
+      enlace: `/polizas?expediente=${expedienteId}`,
+      expedienteId,
+    });
+
+    await this.audit.registrar({
+      entidad: 'Expediente',
+      entidadId: expedienteId,
+      accion: 'polizas_por_enlace',
+      actorUserId,
+      diff: { aseguradoraId: datos.aseguradoraId, polizasCreadas: polizas.length, urlNube: datos.urlNube },
+    });
+
+    return { creadas: polizas.length, polizas };
+  }
+
+  /** Corrige o agrega la liga de nube de una póliza ya existente. */
+  async actualizarEnlace(id: string, urlNube: string, actorUserId: string) {
+    await this.obtener(id);
+    const poliza = await this.prisma.poliza.update({
+      where: { id },
+      data: { urlNube },
+    });
+    await this.audit.registrar({
+      entidad: 'Poliza',
+      entidadId: id,
+      accion: 'actualizar_enlace',
+      actorUserId,
+      diff: { urlNube },
+    });
+    return poliza;
+  }
+
   listar(filtros: { estado?: EstadoPoliza; clienteId?: string; expedienteId?: string }) {
     return this.prisma.poliza.findMany({
       where: {
@@ -156,7 +264,7 @@ export class PolizasService {
    */
   async marcarEmitida(
     id: string,
-    datos: { folio: string; vigenciaInicio?: Date; vigenciaFin?: Date },
+    datos: { folio: string; vigenciaInicio?: Date; vigenciaFin?: Date; prima?: number },
     actorUserId: string,
   ) {
     const poliza = await this.obtener(id);
@@ -166,7 +274,8 @@ export class PolizasService {
 
     const inicio = datos.vigenciaInicio ?? poliza.vigenciaInicio ?? new Date();
     const fin = datos.vigenciaFin ?? poliza.vigenciaFin ?? null;
-    const primaAnual = poliza.prima ? Number(poliza.prima) : 0;
+    // Prima: la que se captura al emitir tiene prioridad sobre la prellenada.
+    const primaAnual = datos.prima ?? (poliza.prima ? Number(poliza.prima) : 0);
     const montoMensual = primaAnual > 0 ? Number((primaAnual / 12).toFixed(2)) : 0;
 
     const [actualizada] = await this.prisma.$transaction([
@@ -177,6 +286,7 @@ export class PolizasService {
           estado: EstadoPoliza.emitida,
           vigenciaInicio: inicio,
           vigenciaFin: fin,
+          ...(datos.prima != null ? { prima: datos.prima as never } : {}),
         },
       }),
       // Primer corte: la fecha del siguiente pago es corte + 30 días naturales.

@@ -42,6 +42,7 @@ export default function ExpedienteDetallePage() {
   const [vigenciaInicio, setVigenciaInicio] = useState(
     () => new Date().toISOString().slice(0, 10),
   );
+  const [urlNubePoliza, setUrlNubePoliza] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -139,6 +140,7 @@ export default function ExpedienteDetallePage() {
   const puedeCapturar = ['tecnico', 'admin'].includes(rol ?? '');
   const puedeAprobar = ['comercial', 'admin'].includes(rol ?? '');
   const puedeProponer = ['administracion', 'admin'].includes(rol ?? '');
+  const puedeEmitir = ['tecnico', 'administracion', 'admin'].includes(rol ?? '');
   const ultimoComparativo = exp.comparativos?.[0];
 
   return (
@@ -506,6 +508,75 @@ export default function ExpedienteDetallePage() {
             >
               Ver pólizas y checklist
             </Link>
+          </div>
+        </section>
+      )}
+
+      {/* Registrar pólizas por liga de nube (Dropbox) */}
+      {puedeEmitir && ['aprobado', 'enviado_a_cliente'].includes(exp.estado) && (
+        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-tarjeta">
+          <h2 className="font-semibold">Registrar pólizas por liga</h2>
+          <p className="text-sm text-slate-500">
+            Pega la liga de la nube (Dropbox) donde subiste los PDF que emitió la aseguradora. Se
+            crea una póliza por cada unidad del cliente, conectada a este expediente y lista para
+            emitir.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-48">
+              <label className="label">Aseguradora</label>
+              <select
+                value={aseguradoraElegida}
+                onChange={(e) => setAseguradoraElegida(e.target.value)}
+                className="input"
+              >
+                <option value="">— Elige —</option>
+                {aseguradoras.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-44">
+              <label className="label">Inicio de vigencia (opcional)</label>
+              <input
+                type="date"
+                value={vigenciaInicio}
+                onChange={(e) => setVigenciaInicio(e.target.value)}
+                className="input"
+              />
+            </div>
+            <div className="min-w-[240px] flex-1">
+              <label className="label">Liga de la póliza (Dropbox)</label>
+              <input
+                type="url"
+                value={urlNubePoliza}
+                onChange={(e) => setUrlNubePoliza(e.target.value)}
+                placeholder="https://www.dropbox.com/…"
+                className="input"
+              />
+            </div>
+            <button
+              onClick={() =>
+                accion(
+                  () =>
+                    api
+                      .crearPolizasPorEnlace(id, {
+                        aseguradoraId: aseguradoraElegida,
+                        urlNube: urlNubePoliza,
+                        ...(vigenciaInicio
+                          ? { vigenciaInicio: new Date(vigenciaInicio).toISOString() }
+                          : {}),
+                      })
+                      .then(() => setUrlNubePoliza('')),
+                  'Pólizas registradas con su liga. Revísalas en Pólizas para emitirlas.',
+                )
+              }
+              disabled={ocupado || !aseguradoraElegida || !urlNubePoliza}
+              className="btn-primary"
+            >
+              Agregar pólizas
+            </button>
           </div>
         </section>
       )}

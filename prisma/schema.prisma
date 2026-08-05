@@ -347,6 +347,9 @@ model Poliza {
   prima          Decimal?     @db.Decimal(14, 2)
   estado         EstadoPoliza @default(pendiente_emision)
   pdfDocId       String?
+  // Liga externa (Dropbox/nube) al PDF de la póliza. El técnico la registra a
+  // mano; no hay API con la aseguradora. Alternativa a subir el archivo.
+  urlNube        String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

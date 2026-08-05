@@ -22,6 +22,7 @@ export default function PolizaDetallePage() {
   const [poliza, setPoliza] = useState<any>(null);
   const [facturas, setFacturas] = useState<any[]>([]);
   const [tipoSubida, setTipoSubida] = useState<'factura' | 'complemento'>('factura');
+  const [enlace, setEnlace] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -32,6 +33,7 @@ export default function PolizaDetallePage() {
     try {
       const p = await api.obtenerPoliza(id);
       setPoliza(p);
+      setEnlace(p.urlNube ?? '');
       setFacturas(await api.listarFacturas(id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar');
@@ -134,21 +136,57 @@ export default function PolizaDetallePage() {
         </div>
       </div>
 
-      {/* PDF de la póliza */}
-      <section className="space-y-2 rounded-lg bg-white p-4 shadow">
-        <h2 className="font-semibold">Carátula de la póliza</h2>
+      {/* Póliza: liga de nube (Dropbox) o PDF adjunto */}
+      <section className="space-y-3 rounded-lg bg-white p-4 shadow">
+        <h2 className="font-semibold">Póliza (PDF)</h2>
         <p className="text-sm text-slate-500">
-          Al adjuntar el PDF descargado del portal, Claude lee el folio y la vigencia para que no
-          los teclees de nuevo.
+          Registra la liga de la nube (Dropbox) donde está el PDF, o adjunta el archivo. Si adjuntas
+          el PDF, Claude lee el folio y la vigencia para que no los teclees de nuevo.
         </p>
-        <input
-          ref={inputPdf}
-          type="file"
-          accept="application/pdf,image/*"
-          onChange={subirPdf}
-          disabled={ocupado}
-          className="text-sm"
-        />
+
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[260px] flex-1">
+            <label className="label">Liga de la póliza (Dropbox)</label>
+            <input
+              type="url"
+              value={enlace}
+              onChange={(e) => setEnlace(e.target.value)}
+              placeholder="https://www.dropbox.com/…"
+              className="input"
+            />
+          </div>
+          <button
+            onClick={() =>
+              accion(() => api.actualizarEnlacePoliza(id, enlace), 'Liga de la póliza guardada.')
+            }
+            disabled={ocupado || !enlace}
+            className="btn-primary"
+          >
+            Guardar liga
+          </button>
+          {poliza.urlNube && (
+            <a
+              href={poliza.urlNube}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-ghost"
+            >
+              Abrir póliza
+            </a>
+          )}
+        </div>
+
+        <div className="border-t pt-3">
+          <label className="label">O adjunta el PDF descargado del portal</label>
+          <input
+            ref={inputPdf}
+            type="file"
+            accept="application/pdf,image/*"
+            onChange={subirPdf}
+            disabled={ocupado}
+            className="text-sm"
+          />
+        </div>
       </section>
 
       {/* Cortes de cobranza */}

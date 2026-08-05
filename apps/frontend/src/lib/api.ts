@@ -140,6 +140,8 @@ export interface PortalCuenta {
     vigenciaFin: string | null;
     aseguradora: string;
     unidad: string | null;
+    urlNube: string | null;
+    pdfUrl: string | null;
   }[];
   cobranza: {
     periodo: string;
@@ -148,6 +150,17 @@ export interface PortalCuenta {
     fechaProximoPago: string;
     aseguradora: string;
     unidad: string | null;
+  }[];
+  facturas: {
+    tipo: string;
+    fecha: string;
+    aseguradora: string;
+    url: string | null;
+  }[];
+  estadosCuenta: {
+    nombre: string;
+    fecha: string;
+    url: string | null;
   }[];
 }
 
@@ -258,6 +271,17 @@ export const api = {
     request<any>(`/polizas/expediente/${expedienteId}/emitir`, {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  /** Registra pólizas por liga de nube (Dropbox): una por unidad activa. */
+  crearPolizasPorEnlace: (expedienteId: string, data: Record<string, unknown>) =>
+    request<any>(`/polizas/expediente/${expedienteId}/por-enlace`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  actualizarEnlacePoliza: (id: string, urlNube: string) =>
+    request<any>(`/polizas/${id}/enlace`, {
+      method: 'PATCH',
+      body: JSON.stringify({ urlNube }),
     }),
   checklistEmision: (expedienteId: string) =>
     request<any>(`/polizas/expediente/${expedienteId}/checklist`),

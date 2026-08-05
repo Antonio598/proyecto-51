@@ -318,24 +318,103 @@ function ConsultaCuenta() {
             <p className="text-sm text-slate-400">Aún no hay pólizas registradas.</p>
           ) : (
             <ul className="space-y-2">
-              {cuenta.polizas.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2.5"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-slate-700">{p.unidad}</div>
-                    <div className="text-xs text-slate-500">
-                      {p.aseguradora}
-                      {p.folio ? ` · folio ${p.folio}` : ''} · {fecha(p.vigenciaInicio)}
+              {cuenta.polizas.map((p) => {
+                const liga = p.urlNube || p.pdfUrl;
+                return (
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-slate-700">{p.unidad}</div>
+                      <div className="text-xs text-slate-500">
+                        {p.aseguradora}
+                        {p.folio ? ` · folio ${p.folio}` : ''} · {fecha(p.vigenciaInicio)}
+                      </div>
                     </div>
-                  </div>
-                  <EstadoBadge estado={p.estado} />
-                </li>
-              ))}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {liga && (
+                        <a
+                          href={liga}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-marca hover:bg-slate-50"
+                        >
+                          Descargar
+                        </a>
+                      )}
+                      <EstadoBadge estado={p.estado} />
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
+
+        {/* Facturas y complementos */}
+        {cuenta.facturas.length > 0 && (
+          <div className="rounded-2xl bg-white p-6 shadow-tarjeta">
+            <h3 className="section-title mb-3">Facturas y complementos</h3>
+            <ul className="space-y-2">
+              {cuenta.facturas.map((f, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium capitalize text-slate-700">
+                      {f.tipo}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {f.aseguradora} · {fecha(f.fecha)}
+                    </div>
+                  </div>
+                  {f.url && (
+                    <a
+                      href={f.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-marca hover:bg-slate-50"
+                    >
+                      Descargar
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Estados de cuenta (desgloses) */}
+        {cuenta.estadosCuenta.length > 0 && (
+          <div className="rounded-2xl bg-white p-6 shadow-tarjeta">
+            <h3 className="section-title mb-3">Estados de cuenta</h3>
+            <ul className="space-y-2">
+              {cuenta.estadosCuenta.map((e, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-slate-700">{e.nombre}</div>
+                    <div className="text-xs text-slate-500">{fecha(e.fecha)}</div>
+                  </div>
+                  {e.url && (
+                    <a
+                      href={e.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-marca hover:bg-slate-50"
+                    >
+                      Descargar
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Flota */}
         <div className="rounded-2xl bg-white p-6 shadow-tarjeta">

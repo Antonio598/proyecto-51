@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -14,7 +15,12 @@ import type { Response } from 'express';
 import { EstadoPoliza, Rol } from '@prisma/client';
 import { PolizasService } from './polizas.service';
 import { ChecklistService } from './checklist.service';
-import { MarcarEmitidaDto, PrepararEmisionDto } from './dto/poliza.dto';
+import {
+  ActualizarEnlaceDto,
+  CrearPorEnlaceDto,
+  MarcarEmitidaDto,
+  PrepararEmisionDto,
+} from './dto/poliza.dto';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -67,6 +73,32 @@ export class PolizasController {
       dto.vigenciaInicio,
       user.userId,
     );
+  }
+
+  /** Registra pólizas por LIGA de nube (Dropbox): una por unidad activa. */
+  @Roles(Rol.tecnico, Rol.administracion, Rol.admin)
+  @Post('expediente/:expedienteId/por-enlace')
+  crearPorEnlace(
+    @Param('expedienteId') expedienteId: string,
+    @Body() dto: CrearPorEnlaceDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.polizas.crearDesdeEnlace(
+      expedienteId,
+      { aseguradoraId: dto.aseguradoraId, urlNube: dto.urlNube, vigenciaInicio: dto.vigenciaInicio },
+      user.userId,
+    );
+  }
+
+  /** Corrige o agrega la liga de nube de una póliza. */
+  @Roles(Rol.tecnico, Rol.administracion, Rol.admin)
+  @Patch(':id/enlace')
+  actualizarEnlace(
+    @Param('id') id: string,
+    @Body() dto: ActualizarEnlaceDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.polizas.actualizarEnlace(id, dto.urlNube, user.userId);
   }
 
   /** Tras capturarla en el portal: marcar emitida + folio. Crea el primer corte. */

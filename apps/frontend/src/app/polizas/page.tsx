@@ -142,31 +142,43 @@ export default function PolizasPage() {
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {p.estado === 'pendiente_emision' &&
-                    (emitiendo === p.id ? (
-                      <span className="flex items-center justify-end gap-2">
-                        <input
-                          value={folio}
-                          onChange={(e) => setFolio(e.target.value)}
-                          placeholder="Folio del portal"
-                          className="w-36 rounded border border-slate-300 px-2 py-1 text-xs"
-                        />
-                        <button
-                          onClick={() => marcarEmitida(p.id)}
-                          disabled={ocupado || folio.length < 3}
-                          className="rounded bg-green-700 px-3 py-1.5 text-xs text-white disabled:opacity-50"
-                        >
-                          Guardar
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setEmitiendo(p.id)}
-                        className="rounded bg-marca px-3 py-1.5 text-xs text-white"
+                  <span className="flex items-center justify-end gap-2">
+                    {p.urlNube && (
+                      <a
+                        href={p.urlNube}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                       >
-                        Marcar emitida
-                      </button>
-                    ))}
+                        Abrir póliza
+                      </a>
+                    )}
+                    {p.estado === 'pendiente_emision' &&
+                      (emitiendo === p.id ? (
+                        <>
+                          <input
+                            value={folio}
+                            onChange={(e) => setFolio(e.target.value)}
+                            placeholder="Folio del portal"
+                            className="w-36 rounded border border-slate-300 px-2 py-1 text-xs"
+                          />
+                          <button
+                            onClick={() => marcarEmitida(p.id)}
+                            disabled={ocupado || folio.length < 3}
+                            className="rounded bg-green-700 px-3 py-1.5 text-xs text-white disabled:opacity-50"
+                          >
+                            Guardar
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => setEmitiendo(p.id)}
+                          className="rounded bg-marca px-3 py-1.5 text-xs text-white"
+                        >
+                          Emitir
+                        </button>
+                      ))}
+                  </span>
                 </td>
               </tr>
             ))}

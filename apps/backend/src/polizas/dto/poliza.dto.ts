@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDate, IsNumber, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
 
 export class PrepararEmisionDto {
   @IsString()
@@ -8,6 +8,24 @@ export class PrepararEmisionDto {
   @Type(() => Date)
   @IsDate()
   vigenciaInicio: Date;
+}
+
+export class CrearPorEnlaceDto {
+  @IsString()
+  aseguradoraId: string;
+
+  @IsUrl({}, { message: 'La liga de la póliza no es una URL válida.' })
+  urlNube: string;
+
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  vigenciaInicio?: Date;
+}
+
+export class ActualizarEnlaceDto {
+  @IsUrl({}, { message: 'La liga de la póliza no es una URL válida.' })
+  urlNube: string;
 }
 
 export class MarcarEmitidaDto {
@@ -24,4 +42,10 @@ export class MarcarEmitidaDto {
   @Type(() => Date)
   @IsDate()
   vigenciaFin?: Date;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  prima?: number;
 }
