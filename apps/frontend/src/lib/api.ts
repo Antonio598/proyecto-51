@@ -123,6 +123,61 @@ export async function enviarPortal(datos: {
   return res.json();
 }
 
+/** Interfaces de lo que devuelve la consulta pública de cuenta del portal. */
+export interface PortalCuenta {
+  cliente: {
+    razonSocial: string;
+    contactoNombre: string | null;
+    contactoEmail: string | null;
+    telefono: string | null;
+  };
+  unidades: any[];
+  polizas: {
+    id: string;
+    folio: string | null;
+    estado: string;
+    vigenciaInicio: string | null;
+    vigenciaFin: string | null;
+    aseguradora: string;
+    unidad: string | null;
+  }[];
+  cobranza: {
+    periodo: string;
+    estado: string;
+    montoEsperado: string | null;
+    fechaProximoPago: string;
+    aseguradora: string;
+    unidad: string | null;
+  }[];
+}
+
+/** Consulta pública de cuenta (teléfono + correo). No usa token. */
+export async function consultarPortal(datos: {
+  telefono: string;
+  email: string;
+}): Promise<PortalCuenta> {
+  const res = await fetch(`${API_URL}/api/portal/consultar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  if (!res.ok) {
+    let mensaje = `Error ${res.status}`;
+    if (res.status === 429) {
+      mensaje = 'Demasiados intentos seguidos. Espera unos minutos e inténtalo de nuevo.';
+    } else {
+      try {
+        const body = await res.json();
+        mensaje = Array.isArray(body.message) ? body.message.join(', ') : body.message ?? mensaje;
+      } catch {
+        /* respuesta sin JSON */
+      }
+    }
+    throw new Error(mensaje);
+  }
+  return res.json();
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ accessToken: string; refreshToken: string; user: UsuarioSesion }>('/auth/login', {

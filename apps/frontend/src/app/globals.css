@@ -7,5 +7,52 @@
 }
 
 body {
-  @apply bg-slate-50 text-slate-800;
+  @apply bg-slate-100 text-slate-800 antialiased;
+}
+
+/* Componentes reutilizables: dan un aspecto uniforme a todo el sistema y
+   evitan repetir cadenas largas de utilidades en cada pantalla. */
+@layer components {
+  .card {
+    @apply rounded-2xl bg-white shadow-tarjeta ring-1 ring-slate-200/70;
+  }
+  .card-p {
+    @apply rounded-2xl bg-white p-5 shadow-tarjeta ring-1 ring-slate-200/70;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800
+      shadow-sm transition placeholder:text-slate-400
+      focus:border-marca-claro focus:outline-none focus:ring-2 focus:ring-marca-claro/25;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-slate-500;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+      transition disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-marca px-4 py-2 text-sm
+      font-medium text-white shadow-sm transition hover:bg-marca-claro
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white
+      px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm
+      font-medium text-white shadow-sm transition hover:bg-emerald-500
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wide text-slate-400;
+  }
 }

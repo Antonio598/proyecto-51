@@ -10,6 +10,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { PortalService } from './portal.service';
 import { SubirPortalDto } from './dto/subir.dto';
+import { ConsultarPortalDto } from './dto/consultar.dto';
 import { Public } from '../auth/public.decorator';
 
 /**
@@ -41,5 +42,17 @@ export class PortalController {
         mime: a.mimetype,
       })),
     });
+  }
+
+  /**
+   * Consulta de cuenta: el cliente ve su flota, pólizas y cobranza dando
+   * teléfono + correo. Límite más holgado que la subida, pero acotado por IP.
+   */
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 600_000, limit: 20 } })
+  @Post('consultar')
+  consultar(@Body() dto: ConsultarPortalDto) {
+    return this.portal.consultar({ telefono: dto.telefono, email: dto.email });
   }
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EstadoCobranza, OrigenDocumento, Rol, TipoDocumento } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -102,6 +102,76 @@ export class PortalService {
     );
 
     return { recibidos: documentos.length, clienteNuevo: creado };
+  }
+
+  /**
+   * Consulta de autoservicio: el cliente teclea su teléfono + correo y ve la
+   * información que el despacho tiene sobre él (flota, pólizas y cobranza).
+   *
+   * Sin OTP, la contención es doble: teléfono Y correo deben coincidir con el
+   * registro. Si algo no cuadra se responde con un mensaje genérico para no
+   * revelar si un número existe o no.
+   */
+  async consultar(datos: { telefono: string; email: string }) {
+    const numero = WhatsappService.normalizarNumero(datos.telefono);
+    const email = datos.email.trim().toLowerCase();
+
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { whatsappNumber: numero },
+      include: {
+        unidades: { where: { activo: true }, orderBy: { createdAt: 'asc' } },
+        polizas: {
+          orderBy: { vigenciaInicio: 'desc' },
+          include: {
+            aseguradora: { select: { nombre: true } },
+            unidad: { select: { marca: true, modelo: true, vin: true, numeroEconomico: true } },
+            cortes: { orderBy: { fechaProximoPago: 'asc' } },
+          },
+        },
+      },
+    });
+
+    const correoCoincide =
+      cliente?.contactoEmail && cliente.contactoEmail.trim().toLowerCase() === email;
+    if (!cliente || !correoCoincide) {
+      throw new NotFoundException(
+        'No encontramos información con ese teléfono y correo. Verifica que sean los mismos que registraste con el despacho.',
+      );
+    }
+
+    // Cobranza abierta (todo lo que no esté pagado), aplanada por póliza.
+    const cobranza = cliente.polizas.flatMap((p) =>
+      p.cortes
+        .filter((c) => c.estado !== EstadoCobranza.pagado)
+        .map((c) => ({
+          periodo: c.periodo,
+          estado: c.estado,
+          montoEsperado: c.montoEsperado,
+          fechaProximoPago: c.fechaProximoPago,
+          aseguradora: p.aseguradora.nombre,
+          unidad: [p.unidad.marca, p.unidad.modelo].filter(Boolean).join(' ') || p.unidad.vin,
+        })),
+    );
+
+    return {
+      cliente: {
+        razonSocial: cliente.razonSocial,
+        contactoNombre: cliente.contactoNombre,
+        contactoEmail: cliente.contactoEmail,
+        telefono: cliente.whatsappNumber,
+      },
+      unidades: cliente.unidades,
+      polizas: cliente.polizas.map((p) => ({
+        id: p.id,
+        folio: p.folio,
+        estado: p.estado,
+        vigenciaInicio: p.vigenciaInicio,
+        vigenciaFin: p.vigenciaFin,
+        aseguradora: p.aseguradora.nombre,
+        unidad: [p.unidad.marca, p.unidad.modelo].filter(Boolean).join(' ') || p.unidad.vin,
+      })),
+      cobranza,
+    };
   }
 
   // ── Utilidades internas ──
