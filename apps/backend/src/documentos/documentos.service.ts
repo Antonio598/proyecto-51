@@ -251,6 +251,14 @@ export class DocumentosService {
         }
       } catch (err) {
         const motivo = err instanceof Error ? err.message : 'error desconocido';
+        // Si es un fallo GLOBAL (sin saldo, API key inválida, límite de peticiones),
+        // no tiene sentido intentar los demás archivos: se detiene con un solo aviso.
+        const global = this.motivoGlobal(err);
+        if (global) {
+          this.logger.error(`Extracción detenida (global): ${global}`);
+          notas.unshift(global);
+          break;
+        }
         this.logger.warn(`No se pudo extraer "${archivo.nombre}": ${motivo}`);
         fallidos.push(archivo.nombre);
         notas.push(`No se pudo procesar "${archivo.nombre}": ${motivo}`);
@@ -330,6 +338,26 @@ export class DocumentosService {
         mime: documento.mime ?? 'application/octet-stream',
       },
     ];
+  }
+
+  /**
+   * Detecta fallos que afectan a TODA la extracción (no a un archivo concreto):
+   * sin saldo en Anthropic, API key inválida o límite de peticiones. Devuelve un
+   * mensaje claro para el usuario, o null si el error es propio del archivo.
+   */
+  private motivoGlobal(err: unknown): string | null {
+    const status = (err as { status?: number })?.status;
+    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+    if (msg.includes('credit balance') || msg.includes('plans & billing') || msg.includes('billing')) {
+      return 'La cuenta de Anthropic no tiene saldo para la IA. Agrega créditos en Plans & Billing y vuelve a extraer.';
+    }
+    if (status === 401 || msg.includes('authentication') || msg.includes('invalid x-api-key')) {
+      return 'La API key de Anthropic (ANTHROPIC_API_KEY) es inválida o falta. Revísala en el servidor y vuelve a extraer.';
+    }
+    if (status === 429 || msg.includes('rate limit')) {
+      return 'Se alcanzó el límite de peticiones de la API. Espera unos minutos y vuelve a extraer.';
+    }
+    return null;
   }
 
   /** Nombre base de un archivo (sin ruta ni extensión), para usarlo como nombre de flota. */
