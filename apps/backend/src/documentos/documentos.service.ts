@@ -116,20 +116,66 @@ export class DocumentosService {
   }
 
   /**
-   * Ejecuta la extracción con Claude y guarda el resultado con su confianza por campo.
-   * Idempotente: si ya existe una extracción, la reemplaza.
+   * Dispara la extracción. Como puede haber muchos archivos (carpeta/ZIP) y cada
+   * uno es una llamada a la IA, el trabajo corre EN SEGUNDO PLANO: se marca la
+   * extracción como "procesando", se devuelve de inmediato y la pantalla de
+   * revisión consulta el avance. Así la petición HTTP no se queda colgada minutos
+   * (lo que el proxy cortaba como error 500/502).
    */
   async extraer(documentoId: string, actorUserId?: string) {
     const documento = await this.obtener(documentoId);
     const archivos = this.archivosDe(documento);
 
-    // Se procesa CADA archivo del envío (carpeta/ZIP incluidos) y se juntan
-    // todas las unidades en una sola extracción. Cada unidad se etiqueta con su
-    // flota: la que detecte la IA o, si no hay, el nombre del archivo de origen.
+    const extraccion = await this.prisma.extraccion.upsert({
+      where: { documentoId },
+      create: {
+        documentoId,
+        camposExtraidos: {
+          unidades: [],
+          notas: '',
+          procesando: true,
+          totalArchivos: archivos.length,
+        } as Prisma.InputJsonValue,
+        confianzaPorCampo: { unidades: [] } as Prisma.InputJsonValue,
+        modeloUsado: '',
+        estadoRevision: EstadoRevision.pendiente,
+      },
+      update: {
+        camposExtraidos: {
+          unidades: [],
+          notas: '',
+          procesando: true,
+          totalArchivos: archivos.length,
+        } as Prisma.InputJsonValue,
+        confianzaPorCampo: { unidades: [] } as Prisma.InputJsonValue,
+        modeloUsado: '',
+        estadoRevision: EstadoRevision.pendiente,
+        revisadoPorId: null,
+        revisadoEn: null,
+      },
+    });
+
+    // No se espera: el procesamiento sigue en segundo plano.
+    void this.procesarExtraccion(documentoId, archivos, actorUserId);
+
+    return this.conBanderas(extraccion);
+  }
+
+  /**
+   * Procesa todos los archivos del documento (una llamada a la IA por archivo)
+   * y guarda el resultado. Corre en segundo plano; nunca lanza: los errores se
+   * anotan en la extracción para que la pantalla los muestre.
+   */
+  private async procesarExtraccion(
+    documentoId: string,
+    archivos: Array<{ storageKey: string; nombre: string; mime: string }>,
+    actorUserId?: string,
+  ) {
     const unidades: UnidadExtraida[] = [];
     const notas: string[] = [];
     const fallidos: string[] = [];
     let modeloUsado = '';
+
     for (const archivo of archivos) {
       // Cada archivo se procesa por separado: si uno falla (foto muy pesada,
       // PDF que el modelo rechaza, archivo ilegible), se anota y se sigue con
@@ -155,53 +201,54 @@ export class DocumentosService {
       }
     }
 
-    if (fallidos.length === archivos.length) {
-      // Ningún archivo se pudo leer: reportarlo en vez de guardar una extracción vacía.
-      throw new BadRequestException(
-        `No se pudo procesar ninguno de los ${archivos.length} archivo(s). ` +
-          'Revisa que sean Excel, PDF o imágenes legibles y no demasiado pesados.',
+    try {
+      const camposExtraidos = {
+        unidades: unidades.map((u) => this.sinConfianza(u)),
+        notas: notas.join('\n'),
+        procesando: false,
+        totalArchivos: archivos.length,
+        fallidos: fallidos.length,
+      };
+      const confianzaPorCampo = { unidades: unidades.map((u) => u.confianza ?? {}) };
+
+      await this.prisma.extraccion.update({
+        where: { documentoId },
+        data: {
+          camposExtraidos: camposExtraidos as Prisma.InputJsonValue,
+          confianzaPorCampo: confianzaPorCampo as Prisma.InputJsonValue,
+          modeloUsado,
+          estadoRevision: EstadoRevision.pendiente,
+        },
+      });
+
+      await this.audit.registrar({
+        entidad: 'Extraccion',
+        entidadId: documentoId,
+        accion: 'extraer',
+        actorUserId,
+        diff: { documentoId, archivos: archivos.length, unidades: unidades.length, fallidos: fallidos.length },
+      });
+
+      this.logger.log(
+        `Extracción del documento ${documentoId}: ${unidades.length} unidades de ${archivos.length} archivo(s) (${fallidos.length} con error)`,
       );
+    } catch (err) {
+      const motivo = err instanceof Error ? err.message : 'error desconocido';
+      this.logger.error(`Falló al guardar la extracción de ${documentoId}: ${motivo}`);
+      await this.prisma.extraccion
+        .update({
+          where: { documentoId },
+          data: {
+            camposExtraidos: {
+              unidades: [],
+              notas: `La extracción falló: ${motivo}`,
+              procesando: false,
+              error: true,
+            } as Prisma.InputJsonValue,
+          },
+        })
+        .catch(() => undefined);
     }
-
-    const camposExtraidos = {
-      unidades: unidades.map((u) => this.sinConfianza(u)),
-      notas: notas.join('\n'),
-    };
-    const confianzaPorCampo = {
-      unidades: unidades.map((u) => u.confianza ?? {}),
-    };
-
-    const extraccion = await this.prisma.extraccion.upsert({
-      where: { documentoId },
-      create: {
-        documentoId,
-        camposExtraidos: camposExtraidos as Prisma.InputJsonValue,
-        confianzaPorCampo: confianzaPorCampo as Prisma.InputJsonValue,
-        modeloUsado,
-        estadoRevision: EstadoRevision.pendiente,
-      },
-      update: {
-        camposExtraidos: camposExtraidos as Prisma.InputJsonValue,
-        confianzaPorCampo: confianzaPorCampo as Prisma.InputJsonValue,
-        modeloUsado,
-        estadoRevision: EstadoRevision.pendiente,
-        revisadoPorId: null,
-        revisadoEn: null,
-      },
-    });
-
-    await this.audit.registrar({
-      entidad: 'Extraccion',
-      entidadId: extraccion.id,
-      accion: 'extraer',
-      actorUserId,
-      diff: { documentoId, archivos: archivos.length, unidades: unidades.length, modelo: modeloUsado },
-    });
-
-    this.logger.log(
-      `Extracción ${extraccion.id}: ${unidades.length} unidades de ${archivos.length} archivo(s) del documento ${documentoId}`,
-    );
-    return this.conBanderas(extraccion);
   }
 
   /**

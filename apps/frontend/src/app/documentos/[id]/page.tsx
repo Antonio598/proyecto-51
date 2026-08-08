@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -58,6 +58,16 @@ export default function RevisionPage() {
   const [enlace, setEnlace] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const [procesando, setProcesando] = useState(false);
+  const [totalArchivos, setTotalArchivos] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function detenerPoll() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
 
   async function cargar() {
     setError('');
@@ -65,13 +75,35 @@ export default function RevisionPage() {
       const doc = await api.obtenerDocumento(id);
       setDocumento(doc);
       setClienteId(doc.clienteId ?? '');
-      if (doc.extraccion) aplicarExtraccion(doc.extraccion);
+      if (doc.extraccion) manejarExtraccion(doc.extraccion);
       const [{ url }, lista] = await Promise.all([api.enlaceDocumento(id), api.listarClientes()]);
       setEnlace(url);
       setClientes(lista);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar');
     }
+  }
+
+  /** Decide qué hacer con una extracción: si sigue procesando, sondea el avance. */
+  function manejarExtraccion(extraccion: any) {
+    const campos = extraccion.camposExtraidos ?? {};
+    setTotalArchivos(campos.totalArchivos ?? 0);
+    if (campos.procesando) {
+      setProcesando(true);
+      if (!pollRef.current) {
+        pollRef.current = setInterval(async () => {
+          try {
+            manejarExtraccion(await api.revisionDocumento(id));
+          } catch {
+            /* reintenta en el siguiente ciclo */
+          }
+        }, 4000);
+      }
+      return;
+    }
+    setProcesando(false);
+    detenerPoll();
+    aplicarExtraccion(extraccion);
   }
 
   function aplicarExtraccion(extraccion: any) {
@@ -92,6 +124,7 @@ export default function RevisionPage() {
 
   useEffect(() => {
     cargar();
+    return detenerPoll;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -99,7 +132,7 @@ export default function RevisionPage() {
     setOcupado(true);
     setError('');
     try {
-      aplicarExtraccion(await api.extraerDocumento(id));
+      manejarExtraccion(await api.extraerDocumento(id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en la extracción');
     } finally {
@@ -208,19 +241,33 @@ export default function RevisionPage() {
         </div>
         <button
           onClick={extraer}
-          disabled={ocupado}
+          disabled={ocupado || procesando}
           className="rounded bg-marca px-4 py-2 text-sm text-white hover:bg-marca-claro disabled:opacity-50"
         >
-          {ocupado ? 'Procesando…' : documento.extraccion ? 'Volver a extraer' : 'Extraer con IA'}
+          {procesando
+            ? 'Procesando…'
+            : ocupado
+              ? 'Iniciando…'
+              : documento.extraccion
+                ? 'Volver a extraer'
+                : 'Extraer con IA'}
         </button>
         <button
           onClick={descartar}
-          disabled={ocupado}
+          disabled={ocupado || procesando}
           className="rounded border px-4 py-2 text-sm text-slate-600 disabled:opacity-50"
         >
           Descartar
         </button>
       </div>
+
+      {procesando && (
+        <div className="flex items-center gap-3 rounded-lg border border-marca/20 bg-marca-suave px-4 py-3 text-sm text-marca">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-marca border-t-transparent" />
+          Extrayendo con IA{totalArchivos > 1 ? ` ${totalArchivos} archivos` : ''}… Esto puede tardar
+          varios minutos si son muchos archivos. Puedes dejar esta pantalla abierta.
+        </div>
+      )}
 
       {notas && (
         <div className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">
