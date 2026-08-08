@@ -11,10 +11,12 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 const EXTENSIONES_OK = ['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
 /** Tamaño máximo por archivo de contenido (15 MB). */
 const TAM_MAX = 15 * 1024 * 1024;
-/** Tamaño máximo por archivo entrante, incluido un ZIP (30 MB). */
-const TAM_MAX_ENTRANTE = 30 * 1024 * 1024;
+/** Tamaño máximo por archivo entrante, incluido un ZIP (80 MB). */
+const TAM_MAX_ENTRANTE = 80 * 1024 * 1024;
 /** Tope de archivos ya expandidos por envío. */
 const MAX_ARCHIVOS = 200;
+/** Cuántos archivos se suben al almacén a la vez (para no tardar de más). */
+const CONCURRENCIA_SUBIDA = 5;
 
 /** MIME por extensión, para reconstruir el tipo de los archivos sacados de un ZIP. */
 const MIME_POR_EXT: Record<string, string> = {
@@ -84,16 +86,25 @@ export class PortalService {
     // 1. Buscar el cliente por teléfono; si no existe, crearlo.
     const { cliente, creado } = await this.buscarOCrearCliente(numero, datos.email, datos.nombre);
 
-    // 2. Guardar cada archivo en el almacén.
+    // 2. Guardar los archivos en el almacén, en tandas para no tardar de más
+    //    (una subida secuencial de muchos archivos puede pasarse del timeout
+    //    del proxy y devolver 502).
     const guardados: Array<{ storageKey: string; nombre: string; mime: string }> = [];
-    for (const archivo of archivos) {
-      const storageKey = await this.storage.subir(
-        `clientes/${cliente.id}/recibidos`,
-        archivo.nombre,
-        archivo.buffer,
-        archivo.mime,
+    for (let i = 0; i < archivos.length; i += CONCURRENCIA_SUBIDA) {
+      const tanda = archivos.slice(i, i + CONCURRENCIA_SUBIDA);
+      const subidos = await Promise.all(
+        tanda.map(async (archivo) => ({
+          storageKey: await this.storage.subir(
+            `clientes/${cliente.id}/recibidos`,
+            archivo.nombre,
+            archivo.buffer,
+            archivo.mime,
+          ),
+          nombre: archivo.nombre,
+          mime: archivo.mime,
+        })),
       );
-      guardados.push({ storageKey, nombre: archivo.nombre, mime: archivo.mime });
+      guardados.push(...subidos);
     }
 
     // 3. Registrar TODO el envío como UN solo documento en la bandeja. Los

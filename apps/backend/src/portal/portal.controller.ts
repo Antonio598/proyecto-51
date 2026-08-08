@@ -27,9 +27,11 @@ export class PortalController {
   @Throttle({ default: { ttl: 600_000, limit: 5 } })
   @Post('subir')
   @UseInterceptors(
-    // Hasta 60 archivos (una carpeta) o ZIP; 30 MB por archivo entrante.
+    // Hasta 60 archivos (una carpeta) o un ZIP de hasta 80 MB. El límite alto
+    // evita que multer aborte la subida a media transferencia (lo que el proxy
+    // traduce como 502); los tamaños reales se validan en el servicio.
     FilesInterceptor('archivos', 60, {
-      limits: { fileSize: 30 * 1024 * 1024, files: 60 },
+      limits: { fileSize: 80 * 1024 * 1024, files: 60 },
     }),
   )
   subir(@UploadedFiles() archivos: Express.Multer.File[], @Body() dto: SubirPortalDto) {
