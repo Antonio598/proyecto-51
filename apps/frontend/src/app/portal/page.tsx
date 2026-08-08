@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { consultarPortal, enviarPortal, PortalCuenta } from '@/lib/api';
 
 type Pestana = 'enviar' | 'consultar';
@@ -93,6 +93,25 @@ function FormularioEnvio() {
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
   const [listo, setListo] = useState(false);
+  const carpetaRef = useRef<HTMLInputElement>(null);
+
+  // Habilita la selección de carpetas completas (atributo no estándar en React).
+  useEffect(() => {
+    if (carpetaRef.current) {
+      carpetaRef.current.setAttribute('webkitdirectory', '');
+      carpetaRef.current.setAttribute('directory', '');
+    }
+  }, []);
+
+  // Suma archivos a la selección (archivos sueltos + carpeta), sin duplicar.
+  function agregarArchivos(lista: FileList | null) {
+    if (!lista) return;
+    setArchivos((prev) => {
+      const mapa = new Map(prev.map((f) => [f.name + f.size, f]));
+      for (const f of Array.from(lista)) mapa.set(f.name + f.size, f);
+      return Array.from(mapa.values());
+    });
+  }
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
@@ -200,24 +219,53 @@ function FormularioEnvio() {
           </svg>
           <span className="text-sm font-medium text-slate-600">Toca para elegir archivos</span>
           <span className="mt-0.5 text-xs text-slate-400">
-            Excel, PDF o fotos · hasta 10 archivos, 15 MB c/u
+            Excel, PDF, fotos o un ZIP · hasta 30 MB por archivo
           </span>
           <input
             type="file"
             multiple
-            accept=".xlsx,.xls,.csv,application/pdf,image/*"
-            onChange={(e) => setArchivos(Array.from(e.target.files ?? []))}
+            accept=".xlsx,.xls,.csv,application/pdf,image/*,.zip,application/zip"
+            onChange={(e) => agregarArchivos(e.target.files)}
             className="hidden"
           />
         </label>
+
+        <div className="mt-2 flex items-center justify-center">
+          <label className="cursor-pointer text-xs font-medium text-marca hover:underline">
+            o subir una carpeta completa
+            <input
+              ref={carpetaRef}
+              type="file"
+              multiple
+              onChange={(e) => agregarArchivos(e.target.files)}
+              className="hidden"
+            />
+          </label>
+        </div>
+
         {archivos.length > 0 && (
-          <ul className="mt-2 space-y-1 text-xs text-slate-600">
-            {archivos.map((a, i) => (
-              <li key={i} className="flex items-center gap-2">
-                <span className="text-marca">•</span> {a.name}
-              </li>
-            ))}
-          </ul>
+          <div className="mt-2">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-500">
+                {archivos.length} archivo(s) seleccionado(s)
+              </span>
+              <button
+                type="button"
+                onClick={() => setArchivos([])}
+                className="text-xs text-slate-400 hover:text-red-600"
+              >
+                Quitar todos
+              </button>
+            </div>
+            <ul className="max-h-32 space-y-1 overflow-y-auto text-xs text-slate-600">
+              {archivos.map((a, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <span className="text-marca">•</span>
+                  <span className="truncate">{a.name}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 

@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 
 /** Campos que el sistema intenta extraer de cada unidad del layout del despacho. */
 export interface UnidadExtraida {
+  flotaNombre: string | null;
+  folio: string | null;
   aseguradoNombre: string | null;
   tipo: 'camion' | 'tractocamion' | 'remolque' | 'otro';
   marca: string | null;
@@ -28,6 +30,8 @@ export interface UnidadExtraida {
 
 /** Campos de la unidad, en el orden del layout, para armar los esquemas y el prompt. */
 const CAMPOS_UNIDAD = [
+  'flotaNombre',
+  'folio',
   'aseguradoNombre',
   'tipo',
   'marca',
@@ -62,6 +66,15 @@ const ESQUEMA_UNIDADES = {
       items: {
         type: 'object',
         properties: {
+          flotaNombre: {
+            type: ['string', 'null'],
+            description:
+              'Nombre o identificador de la flota a la que pertenece la unidad, si el documento lo indica (título, encabezado, hoja, agrupación o folio de flota). Si no aparece, null.',
+          },
+          folio: {
+            type: ['string', 'null'],
+            description: 'Folio o número de la unidad/inciso, el que se liga a su póliza. Si no aparece, null.',
+          },
           aseguradoNombre: { type: ['string', 'null'], description: 'Nombre del asegurado' },
           tipo: {
             type: 'string',
@@ -127,6 +140,8 @@ const SISTEMA_EXTRACCION = `Eres un asistente del área de captura de un despach
 Tu tarea es extraer, del documento que te envían, los datos de cada unidad de transporte (camiones, tractocamiones, remolques y equipo similar).
 
 Tu tarea es extraer, del documento que te envían, los datos de cada unidad de transporte. Estos son los campos del layout del despacho, con lo que significa cada uno:
+- flotaNombre: nombre o identificador de la FLOTA a la que pertenece la unidad. Un cliente puede tener varias flotas. Búscalo en títulos, encabezados, el nombre de la hoja, agrupaciones visibles o un folio/clave de flota. Si el documento entero es una sola flota, usa ese nombre para todas. Si no hay forma de saberlo, devuelve null (el sistema usará el nombre del archivo).
+- folio: folio o número de la unidad (inciso), el que se liga a su póliza. Si no aparece, null.
 - aseguradoNombre: el nombre del asegurado (contratante) que aparezca en el renglón o en el encabezado del documento.
 - tipo: tipo de unidad NORMALIZADO a uno de: camion, tractocamion, remolque, otro.
 - marca: marca de la unidad (Kenworth, Volvo, Freightliner…).

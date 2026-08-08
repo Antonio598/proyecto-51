@@ -15,6 +15,14 @@ import { TipoUnidad } from '@prisma/client';
 
 export class UnidadCorregidaDto {
   @IsOptional()
+  @IsString()
+  flotaNombre?: string | null;
+
+  @IsOptional()
+  @IsString()
+  folio?: string | null;
+
+  @IsOptional()
   @IsEnum(TipoUnidad)
   tipo?: TipoUnidad;
 

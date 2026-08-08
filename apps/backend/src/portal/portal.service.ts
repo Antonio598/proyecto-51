@@ -1,15 +1,33 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EstadoCobranza, OrigenDocumento, Rol, TipoDocumento } from '@prisma/client';
+import AdmZip from 'adm-zip';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { ConciliacionService } from '../pagos/conciliacion.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 
-/** Extensiones que el portal acepta subir. */
+/** Extensiones de contenido que el portal acepta (dentro o fuera de un ZIP). */
 const EXTENSIONES_OK = ['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
-/** Tamaño máximo por archivo (15 MB). */
+/** Tamaño máximo por archivo de contenido (15 MB). */
 const TAM_MAX = 15 * 1024 * 1024;
+/** Tamaño máximo por archivo entrante, incluido un ZIP (30 MB). */
+const TAM_MAX_ENTRANTE = 30 * 1024 * 1024;
+/** Tope de archivos ya expandidos por envío. */
+const MAX_ARCHIVOS = 200;
+
+/** MIME por extensión, para reconstruir el tipo de los archivos sacados de un ZIP. */
+const MIME_POR_EXT: Record<string, string> = {
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+  csv: 'text/csv',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+};
 
 export interface ArchivoSubido {
   buffer: Buffer;
@@ -42,7 +60,19 @@ export class PortalService {
     if (!datos.archivos?.length) {
       throw new BadRequestException('Adjunta al menos un archivo.');
     }
+    // Validar lo entrante (permite ZIP además del allowlist de contenido).
     for (const a of datos.archivos) {
+      this.validarEntrante(a);
+    }
+    // Expandir carpetas comprimidas: un ZIP se convierte en sus archivos internos.
+    const archivos = this.expandirArchivos(datos.archivos);
+    if (archivos.length === 0) {
+      throw new BadRequestException('No encontramos archivos válidos en lo que subiste.');
+    }
+    if (archivos.length > MAX_ARCHIVOS) {
+      throw new BadRequestException(`Demasiados archivos en un envío (máximo ${MAX_ARCHIVOS}).`);
+    }
+    for (const a of archivos) {
       this.validarArchivo(a);
     }
 
@@ -54,54 +84,62 @@ export class PortalService {
     // 1. Buscar el cliente por teléfono; si no existe, crearlo.
     const { cliente, creado } = await this.buscarOCrearCliente(numero, datos.email, datos.nombre);
 
-    // 2. Guardar cada archivo y registrarlo en la bandeja.
-    const documentos = [];
-    for (const archivo of datos.archivos) {
+    // 2. Guardar cada archivo en el almacén.
+    const guardados: Array<{ storageKey: string; nombre: string; mime: string }> = [];
+    for (const archivo of archivos) {
       const storageKey = await this.storage.subir(
         `clientes/${cliente.id}/recibidos`,
         archivo.nombre,
         archivo.buffer,
         archivo.mime,
       );
-      const documento = await this.prisma.documento.create({
-        data: {
-          clienteId: cliente.id,
-          tipo: TipoDocumento.recibido,
-          origen: OrigenDocumento.portal,
-          storageKey,
-          mime: archivo.mime,
-          nombreOriginal: archivo.nombre,
-          procesado: false,
-          metadata: { telefono: numero, email: datos.email, nombre: datos.nombre ?? null },
-        },
-      });
-      documentos.push(documento);
+      guardados.push({ storageKey, nombre: archivo.nombre, mime: archivo.mime });
     }
 
-    // 3. Avisar al equipo de captura.
+    // 3. Registrar TODO el envío como UN solo documento en la bandeja. Los
+    //    archivos individuales quedan en metadata.archivos para extraerlos juntos.
+    const unSolo = guardados.length === 1;
+    const documento = await this.prisma.documento.create({
+      data: {
+        clienteId: cliente.id,
+        tipo: TipoDocumento.recibido,
+        origen: OrigenDocumento.portal,
+        storageKey: guardados[0].storageKey,
+        mime: unSolo ? guardados[0].mime : 'multipart/paquete',
+        nombreOriginal: unSolo ? guardados[0].nombre : `Paquete de ${guardados.length} archivos`,
+        procesado: false,
+        metadata: {
+          telefono: numero,
+          email: datos.email,
+          nombre: datos.nombre ?? null,
+          archivos: guardados,
+          totalArchivos: guardados.length,
+        },
+      },
+    });
+
+    // 4. Avisar al equipo de captura.
     await this.notificaciones.notificarRol({
       rol: Rol.captura,
       titulo: 'Documentos recibidos por el portal',
       mensaje:
-        `${cliente.razonSocial} (${numero}) subió ${documentos.length} archivo(s) por el portal` +
+        `${cliente.razonSocial} (${numero}) subió ${guardados.length} archivo(s) por el portal` +
         (creado ? ' — cliente nuevo, revisar sus datos.' : '.'),
       enlace: '/documentos',
     });
 
-    // 4. Si es un cliente existente con cobros abiertos, intentar conciliar
-    //    (por si alguno de los archivos es un comprobante de pago).
+    // 5. Si es un cliente existente con cobros abiertos, intentar conciliar
+    //    (por si el envío incluye un comprobante de pago).
     if (!creado) {
-      for (const doc of documentos) {
-        void this.conciliarSiProcede(cliente.id, doc.id);
-      }
+      void this.conciliarSiProcede(cliente.id, documento.id);
     }
 
     this.logger.log(
-      `Portal: ${documentos.length} documento(s) de ${numero}` +
+      `Portal: 1 documento con ${guardados.length} archivo(s) de ${numero}` +
         (creado ? ' (cliente creado)' : ` (${cliente.razonSocial})`),
     );
 
-    return { recibidos: documentos.length, clienteNuevo: creado };
+    return { recibidos: guardados.length, clienteNuevo: creado };
   }
 
   /**
@@ -263,6 +301,7 @@ export class PortalService {
     return { cliente, creado: true };
   }
 
+  /** Valida un archivo de contenido ya expandido (allowlist + 15 MB). */
   private validarArchivo(a: ArchivoSubido) {
     const ext = (a.nombre.split('.').pop() ?? '').toLowerCase();
     if (!EXTENSIONES_OK.includes(ext)) {
@@ -273,6 +312,58 @@ export class PortalService {
     if (a.buffer.length > TAM_MAX) {
       throw new BadRequestException(`"${a.nombre}" supera el tamaño máximo de 15 MB.`);
     }
+  }
+
+  /** Valida un archivo tal como llega (acepta también ZIP, hasta 30 MB). */
+  private validarEntrante(a: ArchivoSubido) {
+    const ext = (a.nombre.split('.').pop() ?? '').toLowerCase();
+    if (ext !== 'zip' && !EXTENSIONES_OK.includes(ext)) {
+      throw new BadRequestException(
+        `Tipo de archivo no permitido: .${ext}. Acepta: ${EXTENSIONES_OK.join(', ')} o .zip.`,
+      );
+    }
+    if (a.buffer.length > TAM_MAX_ENTRANTE) {
+      throw new BadRequestException(`"${a.nombre}" supera el tamaño máximo de 30 MB.`);
+    }
+  }
+
+  private esZip(a: ArchivoSubido): boolean {
+    return (
+      /\.zip$/i.test(a.nombre) ||
+      a.mime === 'application/zip' ||
+      a.mime === 'application/x-zip-compressed'
+    );
+  }
+
+  /** Expande los ZIP a sus archivos internos; el resto pasa tal cual. */
+  private expandirArchivos(entrantes: ArchivoSubido[]): ArchivoSubido[] {
+    const salida: ArchivoSubido[] = [];
+    for (const a of entrantes) {
+      if (!this.esZip(a)) {
+        salida.push(a);
+        continue;
+      }
+      let entradas: AdmZip.IZipEntry[];
+      try {
+        entradas = new AdmZip(a.buffer).getEntries();
+      } catch {
+        throw new BadRequestException(`No se pudo abrir el ZIP "${a.nombre}".`);
+      }
+      for (const entrada of entradas) {
+        if (entrada.isDirectory) continue;
+        const nombre = entrada.entryName.split('/').pop() ?? entrada.entryName;
+        // Ignora archivos ocultos y metadatos de macOS.
+        if (!nombre || nombre.startsWith('.') || entrada.entryName.startsWith('__MACOSX')) continue;
+        const ext = (nombre.split('.').pop() ?? '').toLowerCase();
+        if (!EXTENSIONES_OK.includes(ext)) continue; // se ignora lo no soportado dentro del ZIP
+        salida.push({
+          buffer: entrada.getData(),
+          nombre,
+          mime: MIME_POR_EXT[ext] ?? 'application/octet-stream',
+        });
+      }
+    }
+    return salida;
   }
 
   /** Conciliación oportunista en segundo plano (mismo criterio que la ingesta de WhatsApp). */

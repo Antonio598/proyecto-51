@@ -13,6 +13,8 @@ type UnidadForm = Record<string, string>;
 type TipoCampo = 'texto' | 'numero' | 'moneda' | 'tipo' | 'bool';
 
 const CAMPOS: Array<{ key: string; label: string; tipo?: TipoCampo }> = [
+  { key: 'flotaNombre', label: 'Flota' },
+  { key: 'folio', label: 'Folio' },
   { key: 'aseguradoNombre', label: 'Asegurado' },
   { key: 'tipo', label: 'Tipo de unidad', tipo: 'tipo' },
   { key: 'marca', label: 'Marca' },
@@ -113,6 +115,8 @@ export default function RevisionPage() {
       await api.aprobarExtraccion(id, {
         clienteId: clienteId || undefined,
         unidades: unidades.map((u) => ({
+          flotaNombre: u.flotaNombre || null,
+          folio: u.folio || null,
           tipo: u.tipo || 'otro',
           aseguradoNombre: u.aseguradoNombre || null,
           marca: u.marca || null,

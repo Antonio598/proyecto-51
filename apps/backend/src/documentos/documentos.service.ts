@@ -121,20 +121,33 @@ export class DocumentosService {
    */
   async extraer(documentoId: string, actorUserId?: string) {
     const documento = await this.obtener(documentoId);
-    const contenido = await this.storage.descargar(documento.storageKey);
+    const archivos = this.archivosDe(documento);
 
-    const resultado = await this.claude.extraerUnidades(
-      contenido,
-      documento.mime ?? 'application/octet-stream',
-      documento.nombreOriginal ?? 'documento',
-    );
+    // Se procesa CADA archivo del envío (carpeta/ZIP incluidos) y se juntan
+    // todas las unidades en una sola extracción. Cada unidad se etiqueta con su
+    // flota: la que detecte la IA o, si no hay, el nombre del archivo de origen.
+    const unidades: UnidadExtraida[] = [];
+    const notas: string[] = [];
+    let modeloUsado = '';
+    for (const archivo of archivos) {
+      const contenido = await this.storage.descargar(archivo.storageKey);
+      const resultado = await this.claude.extraerUnidades(contenido, archivo.mime, archivo.nombre);
+      modeloUsado = resultado.modeloUsado;
+      const flotaPorArchivo = this.baseNombre(archivo.nombre);
+      for (const u of resultado.unidades) {
+        unidades.push({ ...u, flotaNombre: u.flotaNombre?.trim() || flotaPorArchivo });
+      }
+      if (resultado.notas?.trim()) {
+        notas.push(archivos.length > 1 ? `[${archivo.nombre}] ${resultado.notas}` : resultado.notas);
+      }
+    }
 
     const camposExtraidos = {
-      unidades: resultado.unidades.map((u) => this.sinConfianza(u)),
-      notas: resultado.notas,
+      unidades: unidades.map((u) => this.sinConfianza(u)),
+      notas: notas.join('\n'),
     };
     const confianzaPorCampo = {
-      unidades: resultado.unidades.map((u) => u.confianza ?? {}),
+      unidades: unidades.map((u) => u.confianza ?? {}),
     };
 
     const extraccion = await this.prisma.extraccion.upsert({
@@ -143,13 +156,13 @@ export class DocumentosService {
         documentoId,
         camposExtraidos: camposExtraidos as Prisma.InputJsonValue,
         confianzaPorCampo: confianzaPorCampo as Prisma.InputJsonValue,
-        modeloUsado: resultado.modeloUsado,
+        modeloUsado,
         estadoRevision: EstadoRevision.pendiente,
       },
       update: {
         camposExtraidos: camposExtraidos as Prisma.InputJsonValue,
         confianzaPorCampo: confianzaPorCampo as Prisma.InputJsonValue,
-        modeloUsado: resultado.modeloUsado,
+        modeloUsado,
         estadoRevision: EstadoRevision.pendiente,
         revisadoPorId: null,
         revisadoEn: null,
@@ -161,13 +174,42 @@ export class DocumentosService {
       entidadId: extraccion.id,
       accion: 'extraer',
       actorUserId,
-      diff: { documentoId, unidades: resultado.unidades.length, modelo: resultado.modeloUsado },
+      diff: { documentoId, archivos: archivos.length, unidades: unidades.length, modelo: modeloUsado },
     });
 
     this.logger.log(
-      `Extracción ${extraccion.id}: ${resultado.unidades.length} unidades del documento ${documentoId}`,
+      `Extracción ${extraccion.id}: ${unidades.length} unidades de ${archivos.length} archivo(s) del documento ${documentoId}`,
     );
     return this.conBanderas(extraccion);
+  }
+
+  /**
+   * Archivos que componen un documento. Los envíos del portal (carpeta/ZIP)
+   * guardan la lista en metadata.archivos; el resto es un solo archivo.
+   */
+  private archivosDe(documento: {
+    storageKey: string;
+    mime: string | null;
+    nombreOriginal: string | null;
+    metadata: Prisma.JsonValue;
+  }): Array<{ storageKey: string; nombre: string; mime: string }> {
+    const meta = documento.metadata as { archivos?: Array<{ storageKey: string; nombre: string; mime: string }> } | null;
+    if (Array.isArray(meta?.archivos) && meta.archivos.length > 0) {
+      return meta.archivos;
+    }
+    return [
+      {
+        storageKey: documento.storageKey,
+        nombre: documento.nombreOriginal ?? 'documento',
+        mime: documento.mime ?? 'application/octet-stream',
+      },
+    ];
+  }
+
+  /** Nombre base de un archivo (sin ruta ni extensión), para usarlo como nombre de flota. */
+  private baseNombre(nombre: string): string {
+    const soloArchivo = nombre.split(/[\\/]/).pop() ?? nombre;
+    return soloArchivo.replace(/\.[^.]+$/, '') || soloArchivo;
   }
 
   /** Devuelve la extracción con las banderas de "requiere revisión" ya calculadas. */
@@ -200,35 +242,60 @@ export class DocumentosService {
       throw new NotFoundException('Este documento aún no tiene extracción');
     }
 
-    const creadas = await this.prisma.$transaction(async (tx) => {
+    const resumen = await this.prisma.$transaction(async (tx) => {
       const unidades = [];
+      // Caché de flotas por nombre para no crear duplicados dentro del mismo envío.
+      const flotasPorNombre = new Map<string, string>();
+      let creadas = 0;
+      let actualizadas = 0;
+
       for (const u of unidadesCorregidas) {
-        unidades.push(
-          await tx.unidad.create({
-            data: {
-              clienteId,
-              tipo: (u.tipo as TipoUnidad) ?? TipoUnidad.otro,
-              aseguradoNombre: u.aseguradoNombre ?? null,
-              vin: u.vin ?? null,
-              anio: u.anio ?? null,
-              marca: u.marca ?? null,
-              modelo: u.modelo ?? null,
-              descripcion: u.descripcion ?? null,
-              numeroEconomico: u.numeroEconomico ?? null,
-              placas: u.placas ?? null,
-              numeroMotor: u.numeroMotor ?? null,
-              tipoCarga: u.tipoCarga ?? null,
-              usoUnidad: u.usoUnidad ?? null,
-              tipoCobertura: u.tipoCobertura ?? null,
-              dobleRemolque: u.dobleRemolque ?? false,
-              valorAsegurado: u.valorAsegurado ?? null,
-              tipoAdaptacion: u.tipoAdaptacion ?? null,
-              coberturaAdaptacion: u.coberturaAdaptacion ?? null,
-              sumaAseguradaAdaptacion: u.sumaAseguradaAdaptacion ?? null,
-              camposExtra: { origenDocumentoId: documentoId } as Prisma.InputJsonValue,
-            },
-          }),
-        );
+        // 1. Resolver la flota (crear si es nueva para este cliente).
+        const flotaId = await this.resolverFlota(tx, clienteId, u.flotaNombre, flotasPorNombre);
+
+        // 2. Datos de la unidad.
+        const datos = {
+          flotaId,
+          folio: u.folio ?? null,
+          tipo: (u.tipo as TipoUnidad) ?? TipoUnidad.otro,
+          aseguradoNombre: u.aseguradoNombre ?? null,
+          vin: u.vin ?? null,
+          anio: u.anio ?? null,
+          marca: u.marca ?? null,
+          modelo: u.modelo ?? null,
+          descripcion: u.descripcion ?? null,
+          numeroEconomico: u.numeroEconomico ?? null,
+          placas: u.placas ?? null,
+          numeroMotor: u.numeroMotor ?? null,
+          tipoCarga: u.tipoCarga ?? null,
+          usoUnidad: u.usoUnidad ?? null,
+          tipoCobertura: u.tipoCobertura ?? null,
+          dobleRemolque: u.dobleRemolque ?? false,
+          valorAsegurado: u.valorAsegurado ?? null,
+          tipoAdaptacion: u.tipoAdaptacion ?? null,
+          coberturaAdaptacion: u.coberturaAdaptacion ?? null,
+          sumaAseguradaAdaptacion: u.sumaAseguradaAdaptacion ?? null,
+        };
+
+        // 3. Si la unidad ya existe (mismo VIN, económico o folio), actualizarla.
+        const existente = await this.buscarUnidadExistente(tx, clienteId, u);
+        if (existente) {
+          unidades.push(
+            await tx.unidad.update({ where: { id: existente.id }, data: { ...datos, activo: true } }),
+          );
+          actualizadas++;
+        } else {
+          unidades.push(
+            await tx.unidad.create({
+              data: {
+                clienteId,
+                ...datos,
+                camposExtra: { origenDocumentoId: documentoId } as Prisma.InputJsonValue,
+              },
+            }),
+          );
+          creadas++;
+        }
       }
 
       await tx.extraccion.update({
@@ -249,7 +316,7 @@ export class DocumentosService {
         data: { procesado: true, clienteId },
       });
 
-      return unidades;
+      return { unidades, creadas, actualizadas };
     });
 
     await this.audit.registrar({
@@ -257,10 +324,52 @@ export class DocumentosService {
       entidadId: documentoId,
       accion: 'aprobar_extraccion',
       actorUserId,
-      diff: { clienteId, unidadesCreadas: creadas.length },
+      diff: {
+        clienteId,
+        unidadesCreadas: resumen.creadas,
+        unidadesActualizadas: resumen.actualizadas,
+      },
     });
 
-    return { unidadesCreadas: creadas.length, unidades: creadas };
+    return {
+      unidadesCreadas: resumen.creadas,
+      unidadesActualizadas: resumen.actualizadas,
+      unidades: resumen.unidades,
+    };
+  }
+
+  /**
+   * Devuelve el id de la flota del cliente con ese nombre, creándola si no existe.
+   * Si el nombre viene vacío, la unidad queda sin flota.
+   */
+  private async resolverFlota(
+    tx: Prisma.TransactionClient,
+    clienteId: string,
+    flotaNombre: string | null | undefined,
+    cache: Map<string, string>,
+  ): Promise<string | null> {
+    const nombre = (flotaNombre ?? '').trim();
+    if (!nombre) return null;
+    if (cache.has(nombre)) return cache.get(nombre)!;
+
+    const existente = await tx.flota.findFirst({ where: { clienteId, nombre } });
+    const flota = existente ?? (await tx.flota.create({ data: { clienteId, nombre } }));
+    cache.set(nombre, flota.id);
+    return flota.id;
+  }
+
+  /** Busca una unidad del cliente que coincida por VIN, número económico o folio. */
+  private async buscarUnidadExistente(
+    tx: Prisma.TransactionClient,
+    clienteId: string,
+    u: UnidadCorregida,
+  ) {
+    const ors: Prisma.UnidadWhereInput[] = [];
+    if (u.vin?.trim()) ors.push({ vin: u.vin.trim() });
+    if (u.numeroEconomico?.trim()) ors.push({ numeroEconomico: u.numeroEconomico.trim() });
+    if (u.folio?.trim()) ors.push({ folio: u.folio.trim() });
+    if (ors.length === 0) return null;
+    return tx.unidad.findFirst({ where: { clienteId, OR: ors } });
   }
 
   /** Descarta el documento sin crear unidades (spam, duplicado, ilegible). */
@@ -314,6 +423,8 @@ export class DocumentosService {
 }
 
 export interface UnidadCorregida {
+  flotaNombre?: string | null;
+  folio?: string | null;
   tipo?: string;
   aseguradoNombre?: string | null;
   vin?: string | null;

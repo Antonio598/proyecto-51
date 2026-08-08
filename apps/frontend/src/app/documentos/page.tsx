@@ -12,7 +12,13 @@ interface DocumentoRow {
   createdAt: string;
   cliente?: { id: string; razonSocial: string } | null;
   extraccion?: { id: string; estadoRevision: string } | null;
-  metadata?: { numero?: string; pushName?: string; telefono?: string; email?: string };
+  metadata?: {
+    numero?: string;
+    pushName?: string;
+    telefono?: string;
+    email?: string;
+    totalArchivos?: number;
+  };
 }
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -146,6 +152,11 @@ export default function BandejaPage() {
                     <Link href={`/documentos/${d.id}`} className="text-marca hover:underline">
                       {d.nombreOriginal ?? 'Sin nombre'}
                     </Link>
+                    {(d.metadata?.totalArchivos ?? 0) > 1 && (
+                      <span className="ml-2 rounded bg-marca-suave px-2 py-0.5 text-xs text-marca">
+                        {d.metadata!.totalArchivos} archivos
+                      </span>
+                    )}
                     <div className="text-xs text-slate-400">{d.mime}</div>
                   </td>
                   <td className="px-4 py-2">

@@ -27,8 +27,9 @@ export class PortalController {
   @Throttle({ default: { ttl: 600_000, limit: 5 } })
   @Post('subir')
   @UseInterceptors(
-    FilesInterceptor('archivos', 10, {
-      limits: { fileSize: 15 * 1024 * 1024, files: 10 },
+    // Hasta 60 archivos (una carpeta) o ZIP; 30 MB por archivo entrante.
+    FilesInterceptor('archivos', 60, {
+      limits: { fileSize: 30 * 1024 * 1024, files: 60 },
     }),
   )
   subir(@UploadedFiles() archivos: Express.Multer.File[], @Body() dto: SubirPortalDto) {

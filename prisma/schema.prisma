@@ -145,6 +145,7 @@ model Cliente {
   updatedAt      DateTime @updatedAt
 
   unidades     Unidad[]
+  flotas       Flota[]
   expedientes  Expediente[]
   polizas      Poliza[]
   documentos   Documento[]
@@ -152,10 +153,30 @@ model Cliente {
   @@index([razonSocial])
 }
 
+// Una flota agrupa unidades de un mismo cliente. Un cliente puede tener varias
+// (p. ej. por asegurado, por archivo entregado o por identificador/folio). Se
+// crean automáticamente al extraer los documentos que sube el cliente.
+model Flota {
+  id        String   @id @default(cuid())
+  clienteId String
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  nombre    String
+  folio     String? // identificador/folio de la flota, si el archivo lo trae
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  unidades Unidad[]
+
+  @@index([clienteId])
+}
+
 model Unidad {
   id             String     @id @default(cuid())
   clienteId      String
   cliente        Cliente    @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  flotaId        String?
+  flota          Flota?     @relation(fields: [flotaId], references: [id], onDelete: SetNull)
+  folio          String?    // folio de la unidad; se liga a la póliza correspondiente
   tipo           TipoUnidad @default(otro)
   aseguradoNombre String?   // nombre del asegurado que aparece en el layout
   vin            String?    // número de serie
@@ -184,6 +205,7 @@ model Unidad {
   polizas Poliza[]
 
   @@index([clienteId])
+  @@index([flotaId])
   @@index([vin])
 }
 

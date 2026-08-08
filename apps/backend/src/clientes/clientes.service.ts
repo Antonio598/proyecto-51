@@ -31,7 +31,8 @@ export class ClientesService {
     const cliente = await this.prisma.cliente.findUnique({
       where: { id },
       include: {
-        unidades: { orderBy: { createdAt: 'asc' } },
+        unidades: { orderBy: { createdAt: 'asc' }, include: { flota: true } },
+        flotas: { orderBy: { nombre: 'asc' } },
       },
     });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');

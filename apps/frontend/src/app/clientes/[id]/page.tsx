@@ -11,6 +11,7 @@ type Fmt = 'texto' | 'moneda' | 'bool';
 
 /** Campos que se muestran en cada unidad (todo lo que extrae la IA). */
 const CAMPOS_UNIDAD: Array<{ key: string; label: string; fmt?: Fmt }> = [
+  { key: 'folio', label: 'Folio' },
   { key: 'aseguradoNombre', label: 'Asegurado' },
   { key: 'descripcion', label: 'Descripción' },
   { key: 'anio', label: 'Año' },
@@ -31,6 +32,21 @@ const CAMPOS_UNIDAD: Array<{ key: string; label: string; fmt?: Fmt }> = [
 function moneda(v: unknown) {
   if (v == null || v === '') return null;
   return Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+}
+
+/** Agrupa las unidades por el nombre de su flota; las sin flota van al final. */
+function agruparPorFlota(unidades: any[]): Array<[string, any[]]> {
+  const grupos = new Map<string, any[]>();
+  for (const u of unidades) {
+    const nombre = u.flota?.nombre ?? 'Sin flota asignada';
+    if (!grupos.has(nombre)) grupos.set(nombre, []);
+    grupos.get(nombre)!.push(u);
+  }
+  return Array.from(grupos.entries()).sort(([a], [b]) => {
+    if (a === 'Sin flota asignada') return 1;
+    if (b === 'Sin flota asignada') return -1;
+    return a.localeCompare(b);
+  });
 }
 
 function valorMostrable(u: Record<string, unknown>, campo: { key: string; fmt?: Fmt }) {
@@ -195,45 +211,57 @@ export default function ClienteDetallePage() {
         {unidades.length === 0 ? (
           <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-400 shadow-tarjeta">
             Sin unidades registradas. Los documentos aprobados desde la bandeja agregan unidades
-            aquí automáticamente.
+            (y sus flotas) aquí automáticamente.
           </div>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {unidades.map((u, i) => {
-              const titulo =
-                [u.marca, u.modelo].filter(Boolean).join(' ') || u.descripcion || `Unidad ${i + 1}`;
-              const campos = CAMPOS_UNIDAD.map((c) => ({
-                label: c.label,
-                valor: valorMostrable(u, c),
-              })).filter((c) => c.valor != null);
-              return (
-                <div key={u.id} className="rounded-2xl bg-white p-4 shadow-tarjeta">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-slate-800">{titulo}</div>
-                      {u.valorAsegurado && (
-                        <div className="text-sm text-marca">{moneda(u.valorAsegurado)}</div>
-                      )}
-                    </div>
-                    <span className="badge shrink-0 bg-marca-suave capitalize text-marca">
-                      {u.tipo}
-                    </span>
-                  </div>
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
-                    {campos.map((c) => (
-                      <div key={c.label} className="min-w-0">
-                        <dt className="text-[11px] uppercase tracking-wide text-slate-400">
-                          {c.label}
-                        </dt>
-                        <dd className="truncate text-sm text-slate-700" title={c.valor ?? ''}>
-                          {c.valor}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
+          <div className="space-y-5">
+            {agruparPorFlota(unidades).map(([flota, delGrupo]) => (
+              <div key={flota}>
+                <div className="mb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-700">{flota}</h3>
+                  <span className="badge bg-marca-suave text-marca">{delGrupo.length}</span>
                 </div>
-              );
-            })}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {delGrupo.map((u, i) => {
+                    const titulo =
+                      [u.marca, u.modelo].filter(Boolean).join(' ') ||
+                      u.descripcion ||
+                      (u.folio ? `Unidad ${u.folio}` : `Unidad ${i + 1}`);
+                    const campos = CAMPOS_UNIDAD.map((c) => ({
+                      label: c.label,
+                      valor: valorMostrable(u, c),
+                    })).filter((c) => c.valor != null);
+                    return (
+                      <div key={u.id} className="rounded-2xl bg-white p-4 shadow-tarjeta">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-slate-800">{titulo}</div>
+                            {u.valorAsegurado && (
+                              <div className="text-sm text-marca">{moneda(u.valorAsegurado)}</div>
+                            )}
+                          </div>
+                          <span className="badge shrink-0 bg-marca-suave capitalize text-marca">
+                            {u.tipo}
+                          </span>
+                        </div>
+                        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+                          {campos.map((c) => (
+                            <div key={c.label} className="min-w-0">
+                              <dt className="text-[11px] uppercase tracking-wide text-slate-400">
+                                {c.label}
+                              </dt>
+                              <dd className="truncate text-sm text-slate-700" title={c.valor ?? ''}>
+                                {c.valor}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
