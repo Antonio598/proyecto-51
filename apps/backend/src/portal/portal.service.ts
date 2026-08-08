@@ -13,8 +13,8 @@ const EXTENSIONES_OK = ['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp
 const TAM_MAX = 15 * 1024 * 1024;
 /** Tamaño máximo por archivo entrante, incluido un ZIP (80 MB). */
 const TAM_MAX_ENTRANTE = 80 * 1024 * 1024;
-/** Tope de archivos ya expandidos por envío. */
-const MAX_ARCHIVOS = 200;
+/** Tope de archivos por envío (acumulado entre tandas). */
+const MAX_ARCHIVOS = 1000;
 /** Cuántos archivos se suben al almacén a la vez (para no tardar de más). */
 const CONCURRENCIA_SUBIDA = 5;
 
