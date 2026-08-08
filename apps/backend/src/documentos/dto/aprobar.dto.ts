@@ -108,6 +108,15 @@ export class AprobarExtraccionDto {
   @IsString()
   clienteId?: string;
 
+  /** RFC del cliente extraído/corregido; se guarda en la ficha del cliente. */
+  @IsOptional()
+  @IsString()
+  clienteRfc?: string;
+
+  @IsOptional()
+  @IsString()
+  clienteRazonSocial?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => UnidadCorregidaDto)

@@ -74,7 +74,10 @@ export class DocumentosController {
     @Body() dto: AprobarExtraccionDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.documentos.aprobar(id, dto.unidades, dto.clienteId, user.userId);
+    return this.documentos.aprobar(id, dto.unidades, dto.clienteId, user.userId, {
+      rfc: dto.clienteRfc,
+      razonSocial: dto.clienteRazonSocial,
+    });
   }
 
   @Roles(Rol.captura, Rol.administracion, Rol.admin)

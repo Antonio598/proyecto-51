@@ -321,8 +321,15 @@ export const api = {
   enlaceDocumento: (id: string) => request<{ url: string }>(`/documentos/${id}/enlace`),
   extraerDocumento: (id: string) => request<any>(`/documentos/${id}/extraer`, { method: 'POST' }),
   revisionDocumento: (id: string) => request<any>(`/documentos/${id}/revision`),
-  aprobarExtraccion: (id: string, data: { clienteId?: string; unidades: unknown[] }) =>
-    request<any>(`/documentos/${id}/aprobar`, { method: 'POST', body: JSON.stringify(data) }),
+  aprobarExtraccion: (
+    id: string,
+    data: {
+      clienteId?: string;
+      clienteRfc?: string;
+      clienteRazonSocial?: string;
+      unidades: unknown[];
+    },
+  ) => request<any>(`/documentos/${id}/aprobar`, { method: 'POST', body: JSON.stringify(data) }),
   descartarDocumento: (id: string) =>
     request<any>(`/documentos/${id}/descartar`, { method: 'POST' }),
 

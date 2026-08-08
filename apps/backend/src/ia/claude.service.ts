@@ -53,6 +53,8 @@ const CAMPOS_UNIDAD = [
 
 export interface ResultadoExtraccion {
   unidades: UnidadExtraida[];
+  /** Datos fiscales del cliente/contratante que aparezcan en el documento. */
+  cliente: { rfc: string; razonSocial: string };
   notas: string;
   modeloUsado: string;
 }
@@ -127,12 +129,29 @@ const ESQUEMA_UNIDADES = {
         additionalProperties: false,
       },
     },
+    cliente: {
+      type: 'object',
+      description: 'Datos fiscales del cliente/contratante que aparezcan en el documento',
+      properties: {
+        rfc: {
+          type: 'string',
+          description:
+            'RFC del contratante/asegurado. Persona moral: 12 caracteres; persona física: 13. Si no aparece, cadena vacía "".',
+        },
+        razonSocial: {
+          type: 'string',
+          description: 'Razón social o nombre completo del contratante. Si no aparece, cadena vacía "".',
+        },
+      },
+      required: ['rfc', 'razonSocial'],
+      additionalProperties: false,
+    },
     notas: {
       type: 'string',
       description: 'Observaciones sobre ambigüedades o datos ilegibles del documento',
     },
   },
-  required: ['unidades', 'notas'],
+  required: ['unidades', 'cliente', 'notas'],
   additionalProperties: false,
 } as const;
 
@@ -160,6 +179,10 @@ Tu tarea es extraer, del documento que te envían, los datos de cada unidad de t
 - sumaAseguradaAdaptacion: suma asegurada de la adaptación, como número; si no hay, null.
 - usoUnidad: uso de la unidad, uno de: particular, carga privada, carga federal (u otro texto si el documento dice algo distinto).
 - dobleRemolque: true si la unidad opera con doble remolque (full/dolly), false si no.
+
+Además de las unidades, extrae los DATOS FISCALES DEL CLIENTE (contratante) en el campo "cliente":
+- rfc: el RFC del contratante/asegurado. Búscalo en el encabezado, la carátula de la póliza, la sección de datos fiscales o donde diga "RFC". Una persona moral tiene 12 caracteres; una persona física, 13 (letras y números). NO lo inventes ni lo confundas con folios, pólizas o números económicos. Si no aparece, "".
+- razonSocial: la razón social o nombre completo del contratante. Si no aparece, "".
 
 Reglas:
 - Extrae UNA entrada por unidad. Si el documento lista 12 unidades, devuelve 12 entradas.
@@ -216,8 +239,17 @@ export class ClaudeService {
       ],
     });
 
-    const datos = this.parsearJson<{ unidades: UnidadExtraida[]; notas: string }>(respuesta);
-    return { ...datos, modeloUsado: this.modelo };
+    const datos = this.parsearJson<{
+      unidades: UnidadExtraida[];
+      cliente?: { rfc: string; razonSocial: string };
+      notas: string;
+    }>(respuesta);
+    return {
+      unidades: datos.unidades,
+      notas: datos.notas,
+      cliente: { rfc: datos.cliente?.rfc ?? '', razonSocial: datos.cliente?.razonSocial ?? '' },
+      modeloUsado: this.modelo,
+    };
   }
 
   /**

@@ -55,6 +55,8 @@ export default function RevisionPage() {
   const [notas, setNotas] = useState('');
   const [clientes, setClientes] = useState<any[]>([]);
   const [clienteId, setClienteId] = useState('');
+  const [clienteRfc, setClienteRfc] = useState('');
+  const [clienteRazon, setClienteRazon] = useState('');
   const [enlace, setEnlace] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -110,6 +112,8 @@ export default function RevisionPage() {
     const campos = extraccion.camposExtraidos ?? {};
     setUnidades((campos.unidades ?? []).map(aForm));
     setNotas(campos.notas ?? '');
+    setClienteRfc(campos.cliente?.rfc ?? '');
+    setClienteRazon(campos.cliente?.razonSocial ?? '');
     // El backend calcula qué campos quedaron por debajo del umbral de confianza.
     const conf = extraccion.confianzaPorCampo?.unidades ?? [];
     setCamposDudosos(
@@ -147,6 +151,8 @@ export default function RevisionPage() {
       const num = (v: string) => (v ? Number(String(v).replace(/[,$\s]/g, '')) : null);
       await api.aprobarExtraccion(id, {
         clienteId: clienteId || undefined,
+        clienteRfc: clienteRfc || undefined,
+        clienteRazonSocial: clienteRazon || undefined,
         unidades: unidades.map((u) => ({
           flotaNombre: u.flotaNombre || null,
           folio: u.folio || null,
@@ -238,6 +244,15 @@ export default function RevisionPage() {
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600">RFC del cliente</label>
+          <input
+            value={clienteRfc}
+            onChange={(e) => setClienteRfc(e.target.value.toUpperCase())}
+            placeholder="Lo detecta la IA"
+            className="mt-1 w-52 rounded border border-slate-300 px-3 py-2 text-sm uppercase"
+          />
         </div>
         <button
           onClick={extraer}

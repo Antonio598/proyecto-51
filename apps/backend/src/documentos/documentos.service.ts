@@ -176,6 +176,10 @@ export class DocumentosService {
     const notas: string[] = [];
     const fallidos: string[] = [];
     let modeloUsado = '';
+    // Datos fiscales del cliente: se toma el primer RFC/razón social que aparezca
+    // en cualquiera de los archivos del envío (es el mismo contratante).
+    let clienteRfc = '';
+    let clienteRazonSocial = '';
 
     for (const archivo of archivos) {
       // Cada archivo se procesa por separado: si uno falla (foto muy pesada,
@@ -185,6 +189,10 @@ export class DocumentosService {
         const contenido = await this.storage.descargar(archivo.storageKey);
         const resultado = await this.claude.extraerUnidades(contenido, archivo.mime, archivo.nombre);
         modeloUsado = resultado.modeloUsado;
+        if (!clienteRfc && resultado.cliente?.rfc?.trim()) clienteRfc = resultado.cliente.rfc.trim();
+        if (!clienteRazonSocial && resultado.cliente?.razonSocial?.trim()) {
+          clienteRazonSocial = resultado.cliente.razonSocial.trim();
+        }
         const flotaPorArchivo = this.baseNombre(archivo.nombre);
         for (const u of resultado.unidades) {
           unidades.push({ ...u, flotaNombre: u.flotaNombre?.trim() || flotaPorArchivo });
@@ -205,6 +213,7 @@ export class DocumentosService {
     try {
       const camposExtraidos = {
         unidades: unidades.map((u) => this.sinConfianza(u)),
+        cliente: { rfc: clienteRfc, razonSocial: clienteRazonSocial },
         notas: notas.join('\n'),
         procesando: false,
         totalArchivos: archivos.length,
@@ -299,6 +308,7 @@ export class DocumentosService {
     unidadesCorregidas: UnidadCorregida[],
     clienteIdOverride: string | undefined,
     actorUserId: string,
+    datosCliente?: { rfc?: string; razonSocial?: string },
   ) {
     const documento = await this.obtener(documentoId);
     const clienteId = clienteIdOverride ?? documento.clienteId;
@@ -312,6 +322,24 @@ export class DocumentosService {
     }
 
     const resumen = await this.prisma.$transaction(async (tx) => {
+      // Datos fiscales del cliente: guardar el RFC extraído/corregido, y completar
+      // la razón social si el cliente aún tiene un nombre provisional (portal).
+      const rfc = datosCliente?.rfc?.trim();
+      const razonSocial = datosCliente?.razonSocial?.trim();
+      if (rfc || razonSocial) {
+        const cli = await tx.cliente.findUnique({
+          where: { id: clienteId },
+          select: { razonSocial: true },
+        });
+        const esProvisional = /^cliente portal/i.test(cli?.razonSocial ?? '');
+        const dataCliente: { rfc?: string; razonSocial?: string } = {};
+        if (rfc) dataCliente.rfc = rfc;
+        if (razonSocial && esProvisional) dataCliente.razonSocial = razonSocial;
+        if (Object.keys(dataCliente).length > 0) {
+          await tx.cliente.update({ where: { id: clienteId }, data: dataCliente });
+        }
+      }
+
       const unidades = [];
       // Caché de flotas por nombre para no crear duplicados dentro del mismo envío.
       const flotasPorNombre = new Map<string, string>();
