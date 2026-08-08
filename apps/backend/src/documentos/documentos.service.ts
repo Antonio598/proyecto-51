@@ -128,18 +128,39 @@ export class DocumentosService {
     // flota: la que detecte la IA o, si no hay, el nombre del archivo de origen.
     const unidades: UnidadExtraida[] = [];
     const notas: string[] = [];
+    const fallidos: string[] = [];
     let modeloUsado = '';
     for (const archivo of archivos) {
-      const contenido = await this.storage.descargar(archivo.storageKey);
-      const resultado = await this.claude.extraerUnidades(contenido, archivo.mime, archivo.nombre);
-      modeloUsado = resultado.modeloUsado;
-      const flotaPorArchivo = this.baseNombre(archivo.nombre);
-      for (const u of resultado.unidades) {
-        unidades.push({ ...u, flotaNombre: u.flotaNombre?.trim() || flotaPorArchivo });
+      // Cada archivo se procesa por separado: si uno falla (foto muy pesada,
+      // PDF que el modelo rechaza, archivo ilegible), se anota y se sigue con
+      // el resto en vez de tumbar toda la extracción.
+      try {
+        const contenido = await this.storage.descargar(archivo.storageKey);
+        const resultado = await this.claude.extraerUnidades(contenido, archivo.mime, archivo.nombre);
+        modeloUsado = resultado.modeloUsado;
+        const flotaPorArchivo = this.baseNombre(archivo.nombre);
+        for (const u of resultado.unidades) {
+          unidades.push({ ...u, flotaNombre: u.flotaNombre?.trim() || flotaPorArchivo });
+        }
+        if (resultado.notas?.trim()) {
+          notas.push(
+            archivos.length > 1 ? `[${archivo.nombre}] ${resultado.notas}` : resultado.notas,
+          );
+        }
+      } catch (err) {
+        const motivo = err instanceof Error ? err.message : 'error desconocido';
+        this.logger.warn(`No se pudo extraer "${archivo.nombre}": ${motivo}`);
+        fallidos.push(archivo.nombre);
+        notas.push(`No se pudo procesar "${archivo.nombre}": ${motivo}`);
       }
-      if (resultado.notas?.trim()) {
-        notas.push(archivos.length > 1 ? `[${archivo.nombre}] ${resultado.notas}` : resultado.notas);
-      }
+    }
+
+    if (fallidos.length === archivos.length) {
+      // Ningún archivo se pudo leer: reportarlo en vez de guardar una extracción vacía.
+      throw new BadRequestException(
+        `No se pudo procesar ninguno de los ${archivos.length} archivo(s). ` +
+          'Revisa que sean Excel, PDF o imágenes legibles y no demasiado pesados.',
+      );
     }
 
     const camposExtraidos = {
