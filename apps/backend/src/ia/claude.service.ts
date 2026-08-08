@@ -67,47 +67,48 @@ const ESQUEMA_UNIDADES = {
         type: 'object',
         properties: {
           flotaNombre: {
-            type: ['string', 'null'],
+            type: 'string',
             description:
-              'Nombre o identificador de la flota a la que pertenece la unidad, si el documento lo indica (título, encabezado, hoja, agrupación o folio de flota). Si no aparece, null.',
+              'Nombre o identificador de la flota a la que pertenece la unidad, si el documento lo indica (título, encabezado, hoja, agrupación o folio de flota). Si no aparece, cadena vacía "".',
           },
           folio: {
-            type: ['string', 'null'],
-            description: 'Folio o número de la unidad/inciso, el que se liga a su póliza. Si no aparece, null.',
+            type: 'string',
+            description:
+              'Folio o número de la unidad/inciso, el que se liga a su póliza. Si no aparece, cadena vacía "".',
           },
-          aseguradoNombre: { type: ['string', 'null'], description: 'Nombre del asegurado' },
+          aseguradoNombre: { type: 'string', description: 'Nombre del asegurado' },
           tipo: {
             type: 'string',
             enum: ['camion', 'tractocamion', 'remolque', 'otro'],
             description: 'Tipo de unidad normalizado',
           },
-          marca: { type: ['string', 'null'] },
-          descripcion: { type: ['string', 'null'], description: 'Descripción completa de la unidad' },
+          marca: { type: 'string' },
+          descripcion: { type: 'string', description: 'Descripción completa de la unidad' },
           anio: { type: ['integer', 'null'] },
-          vin: { type: ['string', 'null'], description: 'Número de serie / VIN (17 caracteres)' },
-          numeroEconomico: { type: ['string', 'null'] },
+          vin: { type: 'string', description: 'Número de serie / VIN (17 caracteres)' },
+          numeroEconomico: { type: 'string' },
           valorAsegurado: { type: ['number', 'null'], description: 'Suma asegurada de la unidad' },
-          placas: { type: ['string', 'null'] },
-          numeroMotor: { type: ['string', 'null'] },
+          placas: { type: 'string' },
+          numeroMotor: { type: 'string' },
           tipoCobertura: {
-            type: ['string', 'null'],
+            type: 'string',
             description: 'Amplia, limitada, RC, etc.',
           },
           tipoCarga: {
-            type: ['string', 'null'],
+            type: 'string',
             description: 'Tipo de carga / descripción de la mercancía',
           },
           tipoAdaptacion: {
-            type: ['string', 'null'],
+            type: 'string',
             description: 'Adaptación o equipo especial montado sobre la unidad, si lo hay',
           },
           coberturaAdaptacion: {
-            type: ['string', 'null'],
+            type: 'string',
             description: 'Cobertura de la adaptación; suele ligarse a la cobertura de la unidad',
           },
           sumaAseguradaAdaptacion: { type: ['number', 'null'] },
           usoUnidad: {
-            type: ['string', 'null'],
+            type: 'string',
             description: 'Particular, carga privada o carga federal',
           },
           dobleRemolque: {
@@ -163,7 +164,7 @@ Tu tarea es extraer, del documento que te envían, los datos de cada unidad de t
 Reglas:
 - Extrae UNA entrada por unidad. Si el documento lista 12 unidades, devuelve 12 entradas.
 - Nunca inventes un VIN, unas placas ni un número de motor.
-- Si un dato no aparece o no puedes leerlo con certeza, devuelve null en ese campo (o false en dobleRemolque) y una confianza baja (menor a 0.5). NO adivines.
+- Si un dato de texto no aparece o no puedes leerlo con certeza, devuelve cadena vacía "" en ese campo; en los numéricos (anio, valorAsegurado, sumaAseguradaAdaptacion) devuelve null; en dobleRemolque, false. En todos los casos marca una confianza baja (menor a 0.5). NO adivines.
 - La confianza refleja qué tan seguro estás de CADA campo: 1.0 = el dato está escrito explícita y legiblemente; 0.5 = lo estás infiriendo; 0.0 = no está. Incluye una confianza para TODOS los campos, incluido dobleRemolque.
 - Los importes vienen en pesos mexicanos; devuélvelos como número sin símbolos ni comas.
 - "tipo" se infiere de la descripción: un tractocamión arrastra, un remolque/caja es arrastrado, un camión es rígido. Si no es claro, usa "otro".
@@ -237,9 +238,9 @@ export class ClaudeService {
           schema: {
             type: 'object',
             properties: {
-              folio: { type: ['string', 'null'], description: 'Número o folio de la póliza' },
-              vigenciaInicio: { type: ['string', 'null'], description: 'Fecha ISO YYYY-MM-DD' },
-              vigenciaFin: { type: ['string', 'null'], description: 'Fecha ISO YYYY-MM-DD' },
+              folio: { type: 'string', description: 'Número o folio de la póliza' },
+              vigenciaInicio: { type: 'string', description: 'Fecha ISO YYYY-MM-DD' },
+              vigenciaFin: { type: 'string', description: 'Fecha ISO YYYY-MM-DD' },
             },
             required: ['folio', 'vigenciaInicio', 'vigenciaFin'],
             additionalProperties: false,
@@ -285,9 +286,9 @@ export class ClaudeService {
             type: 'object',
             properties: {
               monto: { type: ['number', 'null'], description: 'Importe pagado en MXN' },
-              fecha: { type: ['string', 'null'], description: 'Fecha ISO YYYY-MM-DD' },
-              referencia: { type: ['string', 'null'] },
-              beneficiario: { type: ['string', 'null'] },
+              fecha: { type: 'string', description: 'Fecha ISO YYYY-MM-DD' },
+              referencia: { type: 'string' },
+              beneficiario: { type: 'string' },
               confianza: { type: 'number', description: 'Confianza global de 0 a 1' },
             },
             required: ['monto', 'fecha', 'referencia', 'beneficiario', 'confianza'],
@@ -398,7 +399,21 @@ Reglas estrictas:
       };
     }
     // CSV o texto plano
-    return { type: 'text', text: contenido.toString('utf-8') };
+    return { type: 'text', text: this.limitarTexto(contenido.toString('utf-8')) };
+  }
+
+  /**
+   * Recorta el texto que se manda al modelo. Algunos Excel maestros tienen
+   * rangos enormes y superan el contexto (o el tamaño máximo de la petición);
+   * en vez de fallar, se envía la parte inicial y se avisa del recorte.
+   */
+  private limitarTexto(texto: string): string {
+    const MAX = 600_000; // ~180k tokens; deja margen para el prompt y la salida
+    if (texto.length <= MAX) return texto;
+    return (
+      texto.slice(0, MAX) +
+      '\n\n[... documento recortado por ser demasiado grande; puede faltar información al final ...]'
+    );
   }
 
   private esExcel(mime: string, nombreArchivo: string): boolean {
@@ -412,10 +427,12 @@ Reglas estrictas:
   /** Convierte cada hoja del libro a CSV para que el modelo lea la tabla completa. */
   private excelATexto(contenido: Buffer): string {
     const libro = XLSX.read(contenido, { type: 'buffer' });
-    return libro.SheetNames.map((nombre) => {
-      const csv = XLSX.utils.sheet_to_csv(libro.Sheets[nombre]);
+    const texto = libro.SheetNames.map((nombre) => {
+      // blankrows: false descarta filas vacías (los maestros suelen traer rangos enormes en blanco).
+      const csv = XLSX.utils.sheet_to_csv(libro.Sheets[nombre], { blankrows: false });
       return `--- Hoja: ${nombre} ---\n${csv}`;
     }).join('\n\n');
+    return this.limitarTexto(texto);
   }
 
   /** Extrae el JSON estructurado del primer bloque de texto de la respuesta. */
