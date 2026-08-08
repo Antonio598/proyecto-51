@@ -300,6 +300,11 @@ export const api = {
     request<any>('/clientes', { method: 'POST', body: JSON.stringify(data) }),
   actualizarCliente: (id: string, data: Record<string, unknown>) =>
     request<any>(`/clientes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  /** Borrado definitivo del cliente (unidades, flotas, documentos y expedientes). */
+  eliminarCliente: (id: string) =>
+    request<{ ok: boolean }>(`/clientes/${id}/eliminar`, { method: 'DELETE' }),
+  eliminarFlota: (flotaId: string) =>
+    request<{ ok: boolean }>(`/clientes/flotas/${flotaId}`, { method: 'DELETE' }),
   listarUnidades: (clienteId: string) => request<any[]>(`/clientes/${clienteId}/unidades`),
   crearUnidad: (clienteId: string, data: Record<string, unknown>) =>
     request<any>(`/clientes/${clienteId}/unidades`, { method: 'POST', body: JSON.stringify(data) }),

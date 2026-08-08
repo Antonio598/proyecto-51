@@ -29,6 +29,7 @@ enum Rol {
 }
 
 enum EstadoExpediente {
+  vacio
   en_captura
   en_analisis_tecnico
   en_revision_comercial

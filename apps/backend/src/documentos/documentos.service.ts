@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
+  EstadoExpediente,
   EstadoRevision,
   OrigenDocumento,
   Prisma,
@@ -384,7 +385,18 @@ export class DocumentosService {
         data: { procesado: true, clienteId },
       });
 
-      return { unidades, creadas, actualizadas };
+      // Al completar la extracción de un cliente, se crea su expediente en
+      // estado "vacío" (si aún no tiene ninguno), listo para empezar a trabajar.
+      let expedienteCreado = false;
+      const tieneExpediente = await tx.expediente.count({ where: { clienteId } });
+      if (tieneExpediente === 0) {
+        await tx.expediente.create({
+          data: { clienteId, estado: EstadoExpediente.vacio, createdById: actorUserId },
+        });
+        expedienteCreado = true;
+      }
+
+      return { unidades, creadas, actualizadas, expedienteCreado };
     });
 
     await this.audit.registrar({
@@ -402,6 +414,7 @@ export class DocumentosService {
     return {
       unidadesCreadas: resumen.creadas,
       unidadesActualizadas: resumen.actualizadas,
+      expedienteCreado: resumen.expedienteCreado,
       unidades: resumen.unidades,
     };
   }

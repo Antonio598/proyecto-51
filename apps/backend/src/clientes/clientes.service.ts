@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -96,5 +96,53 @@ export class ClientesService {
       actorUserId,
     });
     return cliente;
+  }
+
+  /**
+   * Borra el cliente por completo (unidades, flotas, documentos y expedientes).
+   * Se bloquea si tiene pólizas registradas: esas son datos financieros y no
+   * deben borrarse a la ligera (en ese caso, usar "desactivar").
+   */
+  async eliminar(id: string, actorUserId?: string) {
+    await this.obtener(id);
+
+    const polizas = await this.prisma.poliza.count({ where: { clienteId: id } });
+    if (polizas > 0) {
+      throw new BadRequestException(
+        'El cliente tiene pólizas registradas; no se puede eliminar. Desactívalo si quieres ocultarlo.',
+      );
+    }
+
+    // Orden: primero lo que referencia al cliente y no se borra en cascada
+    // (documentos y expedientes); al borrar el cliente se van sus unidades y flotas.
+    await this.prisma.$transaction([
+      this.prisma.documento.deleteMany({ where: { clienteId: id } }),
+      this.prisma.expediente.deleteMany({ where: { clienteId: id } }),
+      this.prisma.cliente.delete({ where: { id } }),
+    ]);
+
+    await this.audit.registrar({
+      entidad: 'Cliente',
+      entidadId: id,
+      accion: 'eliminar',
+      actorUserId,
+    });
+    return { ok: true };
+  }
+
+  /** Elimina una flota; sus unidades quedan sin flota asignada (no se borran). */
+  async eliminarFlota(flotaId: string, actorUserId?: string) {
+    const flota = await this.prisma.flota.findUnique({ where: { id: flotaId } });
+    if (!flota) throw new NotFoundException('Flota no encontrada');
+
+    await this.prisma.flota.delete({ where: { id: flotaId } });
+
+    await this.audit.registrar({
+      entidad: 'Flota',
+      entidadId: flotaId,
+      accion: 'eliminar',
+      actorUserId,
+    });
+    return { ok: true };
   }
 }

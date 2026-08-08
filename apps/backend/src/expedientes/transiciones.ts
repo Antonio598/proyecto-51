@@ -7,6 +7,8 @@ import { EstadoExpediente } from '@prisma/client';
  * Se mantiene como función pura para poder probarla sin base de datos.
  */
 export const TRANSICIONES: Record<EstadoExpediente, EstadoExpediente[]> = {
+  // "vacio": expediente recién creado al aprobar la extracción; arranca la captura.
+  vacio: [EstadoExpediente.en_captura],
   en_captura: [EstadoExpediente.en_analisis_tecnico],
   en_analisis_tecnico: [EstadoExpediente.en_revision_comercial],
   en_revision_comercial: [EstadoExpediente.ajustado, EstadoExpediente.aprobado],

@@ -68,6 +68,13 @@ export class ClientesController {
     return this.clientes.desactivar(id, user.userId);
   }
 
+  /** Borrado definitivo del cliente (unidades, flotas, documentos y expedientes). */
+  @Roles(Rol.administracion, Rol.admin)
+  @Delete(':id/eliminar')
+  eliminar(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.clientes.eliminar(id, user.userId);
+  }
+
   // ── Unidades (flota) ──
   @Get(':id/unidades')
   listarUnidades(@Param('id') clienteId: string) {
@@ -98,5 +105,12 @@ export class ClientesController {
   @Delete('unidades/:unidadId')
   eliminarUnidad(@Param('unidadId') unidadId: string, @CurrentUser() user: JwtUser) {
     return this.unidades.eliminar(unidadId, user.userId);
+  }
+
+  // ── Flotas ──
+  @Roles(Rol.administracion, Rol.admin)
+  @Delete('flotas/:flotaId')
+  eliminarFlota(@Param('flotaId') flotaId: string, @CurrentUser() user: JwtUser) {
+    return this.clientes.eliminarFlota(flotaId, user.userId);
   }
 }

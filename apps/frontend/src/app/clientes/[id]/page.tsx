@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, getUsuario } from '@/lib/api';
 
 const TIPOS = ['camion', 'tractocamion', 'remolque', 'otro'];
 
@@ -58,6 +58,10 @@ function valorMostrable(u: Record<string, unknown>, campo: { key: string; fmt?: 
 
 export default function ClienteDetallePage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const puedeEliminar = ['administracion', 'admin'].includes(
+    (typeof window !== 'undefined' ? getUsuario()?.rol : '') ?? '',
+  );
   const [cliente, setCliente] = useState<any>(null);
   const [unidades, setUnidades] = useState<any[]>([]);
   const [historial, setHistorial] = useState<any[]>([]);
@@ -125,6 +129,32 @@ export default function ClienteDetallePage() {
     }
   }
 
+  async function eliminarCliente() {
+    if (!confirm(`¿Eliminar el cliente "${cliente.razonSocial}" y toda su información? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    setError('');
+    try {
+      await api.eliminarCliente(id);
+      router.push('/clientes');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar el cliente');
+    }
+  }
+
+  async function eliminarFlota(flotaId: string, nombre: string) {
+    if (!confirm(`¿Eliminar la flota "${nombre}"? Sus unidades no se borran, quedan sin flota asignada.`)) {
+      return;
+    }
+    setError('');
+    try {
+      await api.eliminarFlota(flotaId);
+      cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar la flota');
+    }
+  }
+
   if (error) return <div className="rounded-lg bg-red-50 px-3 py-2 text-red-700">{error}</div>;
   if (!cliente) return <div className="text-slate-400">Cargando…</div>;
 
@@ -138,6 +168,14 @@ export default function ClienteDetallePage() {
           <h1 className="text-2xl font-semibold text-slate-800">{cliente.razonSocial}</h1>
           {!cliente.activo && (
             <span className="badge bg-red-100 text-red-600">Inactivo</span>
+          )}
+          {puedeEliminar && (
+            <button
+              onClick={eliminarCliente}
+              className="ml-auto rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+            >
+              Eliminar cliente
+            </button>
           )}
         </div>
         <p className="mt-1 text-sm text-slate-500">
@@ -215,11 +253,21 @@ export default function ClienteDetallePage() {
           </div>
         ) : (
           <div className="space-y-5">
-            {agruparPorFlota(unidades).map(([flota, delGrupo]) => (
+            {agruparPorFlota(unidades).map(([flota, delGrupo]) => {
+              const flotaId = delGrupo[0]?.flota?.id as string | undefined;
+              return (
               <div key={flota}>
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-slate-700">{flota}</h3>
                   <span className="badge bg-marca-suave text-marca">{delGrupo.length}</span>
+                  {puedeEliminar && flotaId && (
+                    <button
+                      onClick={() => eliminarFlota(flotaId, flota)}
+                      className="text-xs text-slate-400 hover:text-red-600"
+                    >
+                      Eliminar flota
+                    </button>
+                  )}
                 </div>
                 <div className="grid gap-3 lg:grid-cols-2">
                   {delGrupo.map((u, i) => {
@@ -261,7 +309,8 @@ export default function ClienteDetallePage() {
                   })}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
