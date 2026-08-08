@@ -11,4 +11,9 @@ export class SubirPortalDto {
   @IsOptional()
   @IsString()
   nombre?: string;
+
+  /** Si viene, esta es otra tanda del mismo envío: se agrega a ese documento. */
+  @IsOptional()
+  @IsString()
+  loteId?: string;
 }

@@ -57,6 +57,7 @@ export class PortalService {
     telefono: string;
     email: string;
     nombre?: string;
+    loteId?: string;
     archivos: ArchivoSubido[];
   }) {
     if (!datos.archivos?.length) {
@@ -107,8 +108,18 @@ export class PortalService {
       guardados.push(...subidos);
     }
 
-    // 3. Registrar TODO el envío como UN solo documento en la bandeja. Los
-    //    archivos individuales quedan en metadata.archivos para extraerlos juntos.
+    // 3a. Si viene loteId, este es otra TANDA del mismo envío: se agregan los
+    //     archivos al documento ya creado (así el navegador sube en partes
+    //     pequeñas y ningún request es grande — evita el 502 con envíos pesados).
+    if (datos.loteId) {
+      const documento = await this.agregarALote(datos.loteId, cliente.id, guardados);
+      const total = (documento.metadata as { totalArchivos?: number }).totalArchivos ?? 0;
+      this.logger.log(`Portal: +${guardados.length} archivo(s) al lote ${documento.id} (${total} total)`);
+      return { documentoId: documento.id, recibidos: total, totalArchivos: total, clienteNuevo: creado };
+    }
+
+    // 3b. Primera tanda: se crea UN documento en la bandeja. Los archivos quedan
+    //     en metadata.archivos para extraerlos todos juntos.
     const unSolo = guardados.length === 1;
     const documento = await this.prisma.documento.create({
       data: {
@@ -134,7 +145,7 @@ export class PortalService {
       rol: Rol.captura,
       titulo: 'Documentos recibidos por el portal',
       mensaje:
-        `${cliente.razonSocial} (${numero}) subió ${guardados.length} archivo(s) por el portal` +
+        `${cliente.razonSocial} (${numero}) subió documentos por el portal` +
         (creado ? ' — cliente nuevo, revisar sus datos.' : '.'),
       enlace: '/documentos',
     });
@@ -146,11 +157,16 @@ export class PortalService {
     }
 
     this.logger.log(
-      `Portal: 1 documento con ${guardados.length} archivo(s) de ${numero}` +
+      `Portal: documento ${documento.id} creado con ${guardados.length} archivo(s) de ${numero}` +
         (creado ? ' (cliente creado)' : ` (${cliente.razonSocial})`),
     );
 
-    return { recibidos: guardados.length, clienteNuevo: creado };
+    return {
+      documentoId: documento.id,
+      recibidos: guardados.length,
+      totalArchivos: guardados.length,
+      clienteNuevo: creado,
+    };
   }
 
   /**
@@ -285,6 +301,45 @@ export class PortalService {
   }
 
   // ── Utilidades internas ──
+
+  /** Agrega archivos a un documento (lote) del portal ya iniciado por el cliente. */
+  private async agregarALote(
+    loteId: string,
+    clienteId: string,
+    nuevos: Array<{ storageKey: string; nombre: string; mime: string }>,
+  ) {
+    // El lote debe existir, ser del portal, sin procesar y del mismo cliente
+    // (resuelto por su teléfono): así nadie agrega a un lote ajeno.
+    const doc = await this.prisma.documento.findFirst({
+      where: {
+        id: loteId,
+        clienteId,
+        origen: OrigenDocumento.portal,
+        procesado: false,
+      },
+    });
+    if (!doc) {
+      throw new BadRequestException('El envío ya no está disponible; inténtalo de nuevo.');
+    }
+
+    const meta = (doc.metadata ?? {}) as {
+      archivos?: Array<{ storageKey: string; nombre: string; mime: string }>;
+      [k: string]: unknown;
+    };
+    const todos = [...(meta.archivos ?? []), ...nuevos];
+    if (todos.length > MAX_ARCHIVOS) {
+      throw new BadRequestException(`Demasiados archivos en un envío (máximo ${MAX_ARCHIVOS}).`);
+    }
+
+    return this.prisma.documento.update({
+      where: { id: doc.id },
+      data: {
+        nombreOriginal: `Paquete de ${todos.length} archivos`,
+        mime: 'multipart/paquete',
+        metadata: { ...meta, archivos: todos, totalArchivos: todos.length },
+      },
+    });
+  }
 
   private async buscarOCrearCliente(numero: string, email: string, nombre?: string) {
     const existente = await this.prisma.cliente.findUnique({ where: { whatsappNumber: numero } });

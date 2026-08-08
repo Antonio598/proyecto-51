@@ -89,38 +89,134 @@ async function upload<T>(path: string, archivo: File, campos: Record<string, str
   return res.json() as Promise<T>;
 }
 
+// ── Portal público: envío de documentos ──
+
+/** Extensiones de contenido aceptadas (mismas que valida el backend). */
+const EXT_PORTAL = ['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
+const MIME_PORTAL: Record<string, string> = {
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+  csv: 'text/csv',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+};
+/** Tamaño objetivo por tanda (~8 MB): mantiene cada petición pequeña. */
+const TAM_TANDA = 8 * 1024 * 1024;
+const MAX_POR_TANDA = 20;
+
+function extPortalOk(nombre: string): boolean {
+  return EXT_PORTAL.includes((nombre.split('.').pop() ?? '').toLowerCase());
+}
+
 /**
- * Envío del portal público de autoservicio. No usa token (es público) y admite
- * varios archivos bajo el campo `archivos`, como espera el backend.
+ * Descomprime los ZIP en el navegador y devuelve la lista de archivos sueltos.
+ * Así el envío pesado se reparte en tandas y ningún request es grande (evita 502).
+ */
+async function expandirZips(archivos: File[]): Promise<File[]> {
+  const { unzipSync } = await import('fflate');
+  const salida: File[] = [];
+  for (const f of archivos) {
+    if (/\.zip$/i.test(f.name) || f.type === 'application/zip') {
+      let entradas: Record<string, Uint8Array>;
+      try {
+        entradas = unzipSync(new Uint8Array(await f.arrayBuffer()));
+      } catch {
+        throw new Error(`No se pudo abrir el ZIP "${f.name}".`);
+      }
+      for (const [ruta, contenido] of Object.entries(entradas)) {
+        const nombre = ruta.split('/').pop() ?? ruta;
+        if (!nombre || nombre.startsWith('.') || ruta.startsWith('__MACOSX')) continue;
+        if (!extPortalOk(nombre) || contenido.length === 0) continue;
+        const ext = (nombre.split('.').pop() ?? '').toLowerCase();
+        // El contenido es un Uint8Array válido; el cast evita el choque de tipos
+        // entre ArrayBuffer y SharedArrayBuffer del lib DOM.
+        salida.push(
+          new File([contenido as unknown as BlobPart], nombre, { type: MIME_PORTAL[ext] ?? '' }),
+        );
+      }
+    } else if (extPortalOk(f.name)) {
+      salida.push(f);
+    }
+  }
+  return salida;
+}
+
+/** Agrupa los archivos en tandas de ~8 MB (o 20 archivos) para subir por partes. */
+function agruparEnTandas(archivos: File[]): File[][] {
+  const tandas: File[][] = [];
+  let actual: File[] = [];
+  let suma = 0;
+  for (const f of archivos) {
+    if (actual.length > 0 && (suma + f.size > TAM_TANDA || actual.length >= MAX_POR_TANDA)) {
+      tandas.push(actual);
+      actual = [];
+      suma = 0;
+    }
+    actual.push(f);
+    suma += f.size;
+  }
+  if (actual.length > 0) tandas.push(actual);
+  return tandas;
+}
+
+/**
+ * Envío del portal público de autoservicio. No usa token (es público).
+ * Descomprime cualquier ZIP en el navegador y sube en TANDAS pequeñas ligadas a
+ * un mismo documento (loteId), para que un envío pesado no viaje en una sola
+ * petición gigante (lo que hacía fallar el proxy con 502).
  */
 export async function enviarPortal(datos: {
   telefono: string;
   email: string;
   nombre?: string;
   archivos: File[];
+  onProgress?: (hechas: number, total: number) => void;
 }): Promise<{ recibidos: number; clienteNuevo: boolean }> {
-  const form = new FormData();
-  form.append('telefono', datos.telefono);
-  form.append('email', datos.email);
-  if (datos.nombre) form.append('nombre', datos.nombre);
-  for (const archivo of datos.archivos) form.append('archivos', archivo);
-
-  const res = await fetch(`${API_URL}/api/portal/subir`, { method: 'POST', body: form });
-  if (!res.ok) {
-    let mensaje = `Error ${res.status}`;
-    if (res.status === 429) {
-      mensaje = 'Has hecho demasiados envíos seguidos. Espera unos minutos e inténtalo de nuevo.';
-    } else {
-      try {
-        const body = await res.json();
-        mensaje = Array.isArray(body.message) ? body.message.join(', ') : body.message ?? mensaje;
-      } catch {
-        /* respuesta sin JSON */
-      }
-    }
-    throw new Error(mensaje);
+  const expandidos = await expandirZips(datos.archivos);
+  if (expandidos.length === 0) {
+    throw new Error('No hay archivos válidos para enviar (Excel, PDF, fotos o un ZIP).');
   }
-  return res.json();
+  const tandas = agruparEnTandas(expandidos);
+
+  let loteId: string | undefined;
+  let recibidos = 0;
+  let clienteNuevo = false;
+
+  for (let i = 0; i < tandas.length; i++) {
+    const form = new FormData();
+    form.append('telefono', datos.telefono);
+    form.append('email', datos.email);
+    if (datos.nombre) form.append('nombre', datos.nombre);
+    if (loteId) form.append('loteId', loteId);
+    for (const archivo of tandas[i]) form.append('archivos', archivo);
+
+    const res = await fetch(`${API_URL}/api/portal/subir`, { method: 'POST', body: form });
+    if (!res.ok) {
+      let mensaje = `Error ${res.status}`;
+      if (res.status === 429) {
+        mensaje = 'Has hecho demasiados envíos seguidos. Espera unos minutos e inténtalo de nuevo.';
+      } else {
+        try {
+          const body = await res.json();
+          mensaje = Array.isArray(body.message) ? body.message.join(', ') : body.message ?? mensaje;
+        } catch {
+          /* respuesta sin JSON */
+        }
+      }
+      throw new Error(mensaje);
+    }
+    const data = await res.json();
+    loteId = data.documentoId ?? loteId;
+    recibidos = data.totalArchivos ?? recibidos;
+    clienteNuevo = clienteNuevo || !!data.clienteNuevo;
+    datos.onProgress?.(i + 1, tandas.length);
+  }
+
+  return { recibidos, clienteNuevo };
 }
 
 /** Interfaces de lo que devuelve la consulta pública de cuenta del portal. */

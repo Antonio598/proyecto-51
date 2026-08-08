@@ -23,15 +23,15 @@ export class PortalController {
 
   @Public()
   @UseGuards(ThrottlerGuard)
-  // Máx. 5 envíos cada 10 minutos por IP.
-  @Throttle({ default: { ttl: 600_000, limit: 5 } })
+  // Límite holgado: un envío grande se sube en varias tandas pequeñas, así que
+  // cada envío son varias peticiones. Aun así, acota el abuso por IP.
+  @Throttle({ default: { ttl: 600_000, limit: 120 } })
   @Post('subir')
   @UseInterceptors(
-    // Hasta 60 archivos (una carpeta) o un ZIP de hasta 80 MB. El límite alto
-    // evita que multer aborte la subida a media transferencia (lo que el proxy
-    // traduce como 502); los tamaños reales se validan en el servicio.
-    FilesInterceptor('archivos', 60, {
-      limits: { fileSize: 80 * 1024 * 1024, files: 60 },
+    // Cada tanda es pequeña (el navegador descomprime y reparte). Se deja margen
+    // holgado por archivo por si alguien sube un solo archivo grande.
+    FilesInterceptor('archivos', 30, {
+      limits: { fileSize: 20 * 1024 * 1024, files: 30 },
     }),
   )
   subir(@UploadedFiles() archivos: Express.Multer.File[], @Body() dto: SubirPortalDto) {
@@ -39,6 +39,7 @@ export class PortalController {
       telefono: dto.telefono,
       email: dto.email,
       nombre: dto.nombre,
+      loteId: dto.loteId,
       archivos: (archivos ?? []).map((a) => ({
         buffer: a.buffer,
         nombre: a.originalname,

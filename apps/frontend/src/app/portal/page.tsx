@@ -91,6 +91,7 @@ function FormularioEnvio() {
   const [nombre, setNombre] = useState('');
   const [archivos, setArchivos] = useState<File[]>([]);
   const [enviando, setEnviando] = useState(false);
+  const [progreso, setProgreso] = useState<{ hechas: number; total: number } | null>(null);
   const [error, setError] = useState('');
   const [listo, setListo] = useState(false);
   const carpetaRef = useRef<HTMLInputElement>(null);
@@ -121,13 +122,21 @@ function FormularioEnvio() {
       return;
     }
     setEnviando(true);
+    setProgreso(null);
     try {
-      await enviarPortal({ telefono, email, nombre: nombre || undefined, archivos });
+      await enviarPortal({
+        telefono,
+        email,
+        nombre: nombre || undefined,
+        archivos,
+        onProgress: (hechas, total) => setProgreso({ hechas, total }),
+      });
       setListo(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo enviar. Inténtalo de nuevo.');
     } finally {
       setEnviando(false);
+      setProgreso(null);
     }
   }
 
@@ -270,7 +279,11 @@ function FormularioEnvio() {
       </div>
 
       <button type="submit" disabled={enviando} className="btn-primary w-full py-2.5">
-        {enviando ? 'Enviando…' : 'Enviar documentos'}
+        {enviando
+          ? progreso
+            ? `Subiendo… ${progreso.hechas}/${progreso.total}`
+            : 'Preparando…'
+          : 'Enviar documentos'}
       </button>
     </form>
   );
