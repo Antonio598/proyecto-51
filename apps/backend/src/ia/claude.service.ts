@@ -28,172 +28,142 @@ export interface UnidadExtraida {
   confianza: Record<string, number>;
 }
 
-/** Campos de la unidad, en el orden del layout, para armar los esquemas y el prompt. */
-const CAMPOS_UNIDAD = [
-  'flotaNombre',
-  'folio',
-  'aseguradoNombre',
-  'tipo',
-  'marca',
-  'descripcion',
-  'anio',
-  'vin',
-  'numeroEconomico',
-  'valorAsegurado',
-  'placas',
-  'numeroMotor',
-  'tipoCobertura',
-  'tipoCarga',
-  'tipoAdaptacion',
-  'coberturaAdaptacion',
-  'sumaAseguradaAdaptacion',
-  'usoUnidad',
-  'dobleRemolque',
-] as const;
+/** Un vehículo tal como lo devuelve el modelo (esquema por bloque de póliza). */
+interface VehiculoCrudo {
+  inciso: string | null;
+  endoso: string | null;
+  movimiento: string | null;
+  descripcion_vehiculo: string | null;
+  tipo: string | null;
+  modelo: number | null;
+  no_economico: string | null;
+  serie: string | null;
+  motor: string | null;
+  placas: string | null;
+  placas_en_tramite: boolean;
+  cobertura: string | null;
+  tipo_carga: string | null;
+  uso: string | null;
+  servicio: string | null;
+  doble_remolque: boolean | null;
+  daños_materiales: number | 'AMPARADO' | null;
+  robo_total: number | 'AMPARADO' | null;
+  rc_terceros: number | 'AMPARADO' | null;
+  adaptacion_descripcion: string | null;
+  adaptacion_suma: number | null;
+  evidencia?: Record<string, string | null>;
+}
+
+/** Extracción completa de UN documento, tal como la devuelve el modelo. */
+interface ExtraccionCruda {
+  tipo_documento: 'poliza' | 'recibo' | 'endoso' | 'otro';
+  aseguradora: string | null;
+  asegurado: string | null;
+  rfc: string | null;
+  no_poliza: string | null;
+  vigencia_inicio: string | null;
+  vigencia_fin: string | null;
+  vehiculos: VehiculoCrudo[];
+  conflictos?: Array<{ campo: string; valores: string[]; nota?: string }>;
+  notas?: string[];
+}
 
 export interface ResultadoExtraccion {
   unidades: UnidadExtraida[];
   /** Datos fiscales del cliente/contratante que aparezcan en el documento. */
   cliente: { rfc: string; razonSocial: string };
   notas: string;
+  /** Clasificación del documento: poliza | recibo | endoso | otro. */
+  tipoDocumento: string;
+  /** JSON crudo del modelo, para auditoría (no se pierde ningún dato). */
+  crudo: ExtraccionCruda;
   modeloUsado: string;
 }
 
-/** Esquema de salida estructurada — el modelo devuelve JSON validado, no texto a parsear. */
-const ESQUEMA_UNIDADES = {
-  type: 'object',
-  properties: {
-    unidades: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          flotaNombre: {
-            type: 'string',
-            description:
-              'Nombre o identificador de la flota a la que pertenece la unidad, si el documento lo indica (título, encabezado, hoja, agrupación o folio de flota). Si no aparece, cadena vacía "".',
-          },
-          folio: {
-            type: 'string',
-            description:
-              'Folio o número de la unidad/inciso, el que se liga a su póliza. Si no aparece, cadena vacía "".',
-          },
-          aseguradoNombre: { type: 'string', description: 'Nombre del asegurado' },
-          tipo: {
-            type: 'string',
-            enum: ['camion', 'tractocamion', 'remolque', 'otro'],
-            description: 'Tipo de unidad normalizado',
-          },
-          marca: { type: 'string' },
-          descripcion: { type: 'string', description: 'Descripción completa de la unidad' },
-          anio: { type: ['integer', 'null'] },
-          vin: { type: 'string', description: 'Número de serie / VIN (17 caracteres)' },
-          numeroEconomico: { type: 'string' },
-          valorAsegurado: { type: ['number', 'null'], description: 'Suma asegurada de la unidad' },
-          placas: { type: 'string' },
-          numeroMotor: { type: 'string' },
-          tipoCobertura: {
-            type: 'string',
-            description: 'Amplia, limitada, RC, etc.',
-          },
-          tipoCarga: {
-            type: 'string',
-            description: 'Tipo de carga / descripción de la mercancía',
-          },
-          tipoAdaptacion: {
-            type: 'string',
-            description: 'Adaptación o equipo especial montado sobre la unidad, si lo hay',
-          },
-          coberturaAdaptacion: {
-            type: 'string',
-            description: 'Cobertura de la adaptación; suele ligarse a la cobertura de la unidad',
-          },
-          sumaAseguradaAdaptacion: { type: ['number', 'null'] },
-          usoUnidad: {
-            type: 'string',
-            description: 'Particular, carga privada o carga federal',
-          },
-          dobleRemolque: {
-            type: 'boolean',
-            description: 'true si la unidad opera con doble remolque',
-          },
-          confianza: {
-            type: 'object',
-            description: 'Confianza de 0 a 1 por cada campo extraído',
-            properties: Object.fromEntries(CAMPOS_UNIDAD.map((c) => [c, { type: 'number' }])),
-            required: [...CAMPOS_UNIDAD],
-            additionalProperties: false,
-          },
-        },
-        required: [...CAMPOS_UNIDAD, 'confianza'],
-        additionalProperties: false,
-      },
-    },
-    cliente: {
-      type: 'object',
-      description: 'Datos fiscales del cliente/contratante que aparezcan en el documento',
-      properties: {
-        rfc: {
-          type: 'string',
-          description:
-            'RFC del contratante/asegurado. Persona moral: 12 caracteres; persona física: 13. Si no aparece, cadena vacía "".',
-        },
-        razonSocial: {
-          type: 'string',
-          description: 'Razón social o nombre completo del contratante. Si no aparece, cadena vacía "".',
-        },
-      },
-      required: ['rfc', 'razonSocial'],
-      additionalProperties: false,
-    },
-    notas: {
-      type: 'string',
-      description: 'Observaciones sobre ambigüedades o datos ilegibles del documento',
-    },
-  },
-  required: ['unidades', 'cliente', 'notas'],
-  additionalProperties: false,
-} as const;
+const SISTEMA_EXTRACCION = `Eres un extractor de datos de documentos de seguros vehiculares mexicanos.
+Devuelves EXCLUSIVAMENTE JSON válido, sin markdown, sin preámbulo.
 
-const SISTEMA_EXTRACCION = `Eres un asistente del área de captura de un despacho de seguros mexicano que administra pólizas para flotas de transporte de carga.
+PASO 1 — CLASIFICA el documento antes de extraer:
+- "poliza": carátula o inciso de póliza. Contiene "DESCRIPCIÓN DEL VEHÍCULO
+  ASEGURADO" o "VEHÍCULO ASEGURADO" + desglose de coberturas con sumas.
+- "recibo": comprobante de pago. Contiene "TOTAL A PAGAR", el importe en letra,
+  o descripción en formato "<DESCRIPCIÓN> MOD. AAAA AMIS #####".
+- "endoso": contiene "Movimiento:" con valor A-ADICIONAL, B-DESCRIPTIVO,
+  D-DEVOLUCION, BAJA o similar.
+- "otro": cualquier otra cosa.
 
-Tu tarea es extraer, del documento que te envían, los datos de cada unidad de transporte (camiones, tractocamiones, remolques y equipo similar).
+REGLA CRÍTICA: si tipo_documento es "recibo", devuelve vehiculos: [] SIEMPRE.
+Un recibo nunca genera un registro de unidad, aunque describa un vehículo.
+La cadena "AMIS #####" es marca de recibo, no de póliza.
 
-Tu tarea es extraer, del documento que te envían, los datos de cada unidad de transporte. Estos son los campos del layout del despacho, con lo que significa cada uno:
-- flotaNombre: nombre o identificador de la FLOTA a la que pertenece la unidad. Un cliente puede tener varias flotas. Búscalo en títulos, encabezados, el nombre de la hoja, agrupaciones visibles o un folio/clave de flota. Si el documento entero es una sola flota, usa ese nombre para todas. Si no hay forma de saberlo, devuelve null (el sistema usará el nombre del archivo).
-- folio: folio o número de la unidad (inciso), el que se liga a su póliza. Si no aparece, null.
-- aseguradoNombre: el nombre del asegurado (contratante) que aparezca en el renglón o en el encabezado del documento.
-- tipo: tipo de unidad NORMALIZADO a uno de: camion, tractocamion, remolque, otro.
-- marca: marca de la unidad (Kenworth, Volvo, Freightliner…).
-- descripcion: descripción completa de la unidad tal como viene en el documento.
-- anio: año/modelo de la unidad (número).
-- vin: número de serie (VIN). Suele tener 17 caracteres alfanuméricos.
-- numeroEconomico: número económico interno de la unidad.
-- valorAsegurado: suma asegurada de la unidad, en pesos, como número sin símbolos ni comas.
-- placas: placas de la unidad.
-- numeroMotor: número de motor.
-- tipoCobertura: tipo de cobertura de la unidad (amplia, limitada, RC, etc.). Cópialo tal cual.
-- tipoCarga: tipo de carga o descripción de la mercancía que transporta.
-- tipoAdaptacion: si la unidad trae una adaptación o equipo especial (grúa, tanque, plataforma, refrigeración…), descríbela; si no hay, null.
-- coberturaAdaptacion: cobertura de esa adaptación (suele ser la misma que la de la unidad); si no hay adaptación, null.
-- sumaAseguradaAdaptacion: suma asegurada de la adaptación, como número; si no hay, null.
-- usoUnidad: uso de la unidad, uno de: particular, carga privada, carga federal (u otro texto si el documento dice algo distinto).
-- dobleRemolque: true si la unidad opera con doble remolque (full/dolly), false si no.
+PASO 2 — Si es "poliza" o "endoso", extrae UN OBJETO POR CADA bloque
+"DESCRIPCIÓN DEL VEHÍCULO ASEGURADO". Un PDF puede tener decenas. Nunca
+combines campos de bloques distintos: cada objeto se llena únicamente con
+texto que aparece dentro de su propio bloque y del encabezado de página
+inmediato (PÓLIZA / ENDOSO / INCISO).
 
-Además de las unidades, extrae los DATOS FISCALES DEL CLIENTE (contratante) en el campo "cliente":
-- rfc: el RFC del contratante/asegurado. Búscalo en el encabezado, la carátula de la póliza, la sección de datos fiscales o donde diga "RFC". Una persona moral tiene 12 caracteres; una persona física, 13 (letras y números). NO lo inventes ni lo confundas con folios, pólizas o números económicos. Si no aparece, "".
-- razonSocial: la razón social o nombre completo del contratante. Si no aparece, "".
+PASO 3 — Reglas de llenado:
+- Si un campo no aparece literalmente, usa null. NUNCA infieras, deduzcas,
+  completes ni copies de otro vehículo.
+- Placas: si dice "TRAMITE", "EN TRAMITE" o está vacío, usa null y marca
+  placas_en_tramite. Si el valor coincide con el No. económico (ej. "ECO 302"),
+  es un error de captura de la aseguradora: placas = null.
+- Serie/VIN: exactamente 17 caracteres alfanuméricos. Si lees menos o más,
+  devuelve null y agrega una nota. No "corrijas" caracteres.
+- Sumas: captura por separado daños_materiales, robo_total, rc_terceros y
+  la suma de adaptación/conversión. No las sumes ni promedies. Valores
+  numéricos sin símbolo ni comas. "Amparado"/"Amparada" → string "AMPARADO".
+- Copia descripcion_vehiculo textual, incluyendo la clave AMIS inicial si viene.
 
-Reglas:
-- Extrae UNA entrada por unidad. Si el documento lista 12 unidades, devuelve 12 entradas.
-- Nunca inventes un VIN, unas placas ni un número de motor.
-- Si un dato de texto no aparece o no puedes leerlo con certeza, devuelve cadena vacía "" en ese campo; en los numéricos (anio, valorAsegurado, sumaAseguradaAdaptacion) devuelve null; en dobleRemolque, false. En todos los casos marca una confianza baja (menor a 0.5). NO adivines.
-- La confianza refleja qué tan seguro estás de CADA campo: 1.0 = el dato está escrito explícita y legiblemente; 0.5 = lo estás infiriendo; 0.0 = no está. Incluye una confianza para TODOS los campos, incluido dobleRemolque.
-- Los importes vienen en pesos mexicanos; devuélvelos como número sin símbolos ni comas.
-- "tipo" se infiere de la descripción: un tractocamión arrastra, un remolque/caja es arrastrado, un camión es rígido. Si no es claro, usa "otro".
-- En "notas" reporta cualquier ambigüedad, columna que no entendiste o dato que el humano deba verificar.
+PASO 4 — Evidencia. Para serie, placas, no_economico y daños_materiales
+incluye en "evidencia" el fragmento literal (máx. 80 caracteres) del que
+tomaste el dato.
 
-Es preferible marcar un dato como incierto a capturarlo mal: un humano revisará tu extracción antes de que entre al sistema.`;
+PASO 5 — Conflictos. Si el mismo campo aparece con dos valores distintos
+dentro del documento, NO elijas: reporta ambos en "conflictos" y deja el
+campo con el valor del bloque del inciso.
+
+También extrae, cuando aparezca, el RFC del contratante/asegurado en "rfc"
+(persona moral: 12 caracteres; persona física: 13). No lo inventes ni lo
+confundas con folios o números de póliza. Si no aparece, null.
+
+Esquema de salida:
+{
+  "tipo_documento": "poliza|recibo|endoso|otro",
+  "aseguradora": string|null,
+  "asegurado": string|null,
+  "rfc": string|null,
+  "no_poliza": string|null,
+  "vigencia_inicio": "YYYY-MM-DD"|null,
+  "vigencia_fin": "YYYY-MM-DD"|null,
+  "vehiculos": [{
+    "inciso": string|null,
+    "endoso": string|null,
+    "movimiento": string|null,
+    "descripcion_vehiculo": string|null,
+    "tipo": string|null,
+    "modelo": integer|null,
+    "no_economico": string|null,
+    "serie": string|null,
+    "motor": string|null,
+    "placas": string|null,
+    "placas_en_tramite": boolean,
+    "cobertura": string|null,
+    "tipo_carga": string|null,
+    "uso": string|null,
+    "servicio": string|null,
+    "doble_remolque": boolean|null,
+    "daños_materiales": number|"AMPARADO"|null,
+    "robo_total": number|"AMPARADO"|null,
+    "rc_terceros": number|"AMPARADO"|null,
+    "adaptacion_descripcion": string|null,
+    "adaptacion_suma": number|null,
+    "evidencia": {"serie": string|null, "placas": string|null,
+                  "no_economico": string|null, "daños_materiales": string|null}
+  }],
+  "conflictos": [{"campo": string, "valores": [string], "nota": string}],
+  "notas": [string]
+}`;
 
 @Injectable()
 export class ClaudeService {
@@ -209,8 +179,10 @@ export class ClaudeService {
   }
 
   /**
-   * Extrae las unidades de un documento (Excel, PDF o imagen).
-   * Excel se convierte a CSV; PDF e imágenes se envían nativamente (visión).
+   * Extrae de un documento (Excel, PDF o imagen) siguiendo el proceso de
+   * clasificación + un objeto por bloque de vehículo. Devuelve JSON libre (no
+   * salida estructurada) para admitir el esquema completo con uniones y nulos.
+   * Se usa streaming por si la póliza trae decenas de incisos.
    */
   async extraerUnidades(
     contenido: Buffer,
@@ -219,12 +191,11 @@ export class ClaudeService {
   ): Promise<ResultadoExtraccion> {
     const bloque = this.construirBloqueDocumento(contenido, mime, nombreArchivo);
 
-    const respuesta = await this.client.messages.create({
+    const stream = this.client.messages.stream({
       model: this.modelo,
-      max_tokens: 16000,
+      max_tokens: 32000,
       thinking: { type: 'adaptive' },
       system: SISTEMA_EXTRACCION,
-      output_config: { format: { type: 'json_schema', schema: ESQUEMA_UNIDADES } },
       messages: [
         {
           role: 'user',
@@ -232,24 +203,81 @@ export class ClaudeService {
             bloque,
             {
               type: 'text',
-              text: `Extrae todas las unidades de transporte de este documento (${nombreArchivo}).`,
+              text: `Clasifica este documento (${nombreArchivo}) y extrae los datos según las reglas. Devuelve solo el JSON.`,
             },
           ],
         },
       ],
     });
+    const respuesta = await stream.finalMessage();
 
-    const datos = this.parsearJson<{
-      unidades: UnidadExtraida[];
-      cliente?: { rfc: string; razonSocial: string };
-      notas: string;
-    }>(respuesta);
+    const crudo = this.parsearJson<ExtraccionCruda>(respuesta);
+    const tipoDocumento = crudo.tipo_documento ?? 'otro';
+
+    // Un recibo nunca genera unidades, aunque describa un vehículo.
+    const vehiculos = tipoDocumento === 'recibo' ? [] : crudo.vehiculos ?? [];
+    const unidades = vehiculos.map((v) => this.aUnidad(v, crudo.asegurado));
+
+    // Notas: las del modelo + los conflictos, en texto legible para la revisión.
+    const notas: string[] = Array.isArray(crudo.notas)
+      ? crudo.notas.filter((n): n is string => typeof n === 'string')
+      : [];
+    if (tipoDocumento === 'recibo') {
+      notas.unshift('Documento clasificado como recibo de pago: no genera unidades.');
+    }
+    for (const c of crudo.conflictos ?? []) {
+      notas.push(
+        `Conflicto en ${c.campo}: ${(c.valores ?? []).join(' vs ')}${c.nota ? ` — ${c.nota}` : ''}`,
+      );
+    }
+
     return {
-      unidades: datos.unidades,
-      notas: datos.notas,
-      cliente: { rfc: datos.cliente?.rfc ?? '', razonSocial: datos.cliente?.razonSocial ?? '' },
+      unidades,
+      cliente: { rfc: crudo.rfc ?? '', razonSocial: crudo.asegurado ?? '' },
+      notas: notas.join('\n'),
+      tipoDocumento,
+      crudo,
       modeloUsado: this.modelo,
     };
+  }
+
+  /** Mapea un vehículo del esquema de póliza a la unidad interna del sistema. */
+  private aUnidad(v: VehiculoCrudo, asegurado: string | null): UnidadExtraida {
+    const num = (x: unknown): number | null => (typeof x === 'number' ? x : null);
+    return {
+      // La flota la resuelve el servicio (nombre del archivo) si no hay otra pista.
+      flotaNombre: '',
+      folio: v.inciso ?? '',
+      aseguradoNombre: asegurado ?? '',
+      tipo: this.normalizarTipo(v.tipo),
+      marca: '', // el layout nuevo lo trae dentro de descripcion_vehiculo
+      descripcion: v.descripcion_vehiculo ?? '',
+      anio: num(v.modelo),
+      vin: v.serie ?? '',
+      numeroEconomico: v.no_economico ?? '',
+      // La suma asegurada de la unidad es la de daños materiales; robo/RC se
+      // guardan aparte en el JSON crudo (nunca se suman ni promedian).
+      valorAsegurado: num(v.daños_materiales),
+      placas: v.placas ?? '',
+      numeroMotor: v.motor ?? '',
+      tipoCobertura: v.cobertura ?? '',
+      tipoCarga: v.tipo_carga ?? '',
+      tipoAdaptacion: v.adaptacion_descripcion ?? '',
+      coberturaAdaptacion: '',
+      sumaAseguradaAdaptacion: num(v.adaptacion_suma),
+      usoUnidad: [v.uso, v.servicio].filter(Boolean).join(' · ') || '',
+      dobleRemolque: v.doble_remolque === true,
+      confianza: {},
+    };
+  }
+
+  /** Normaliza el tipo libre del documento a uno de los del sistema. */
+  private normalizarTipo(t?: string | null): 'camion' | 'tractocamion' | 'remolque' | 'otro' {
+    const s = (t ?? '').toLowerCase();
+    if (/tracto/.test(s)) return 'tractocamion';
+    if (/remolque|caja|plataforma|tanque|tolva|dolly|semi|g[oó]ndola/.test(s)) return 'remolque';
+    if (/cami[oó]n|torton|rab[oó]n|chasis|pick|camioneta|veh[ií]culo/.test(s)) return 'camion';
+    return 'otro';
   }
 
   /**
@@ -467,13 +495,24 @@ Reglas estrictas:
     return this.limitarTexto(texto);
   }
 
-  /** Extrae el JSON estructurado del primer bloque de texto de la respuesta. */
+  /** Extrae el JSON del primer bloque de texto de la respuesta (tolera fences). */
   private parsearJson<T>(respuesta: Anthropic.Message): T {
     const bloque = respuesta.content.find((b) => b.type === 'text');
     if (!bloque || bloque.type !== 'text') {
       this.logger.error(`Respuesta sin texto (stop_reason: ${respuesta.stop_reason})`);
       throw new Error('El modelo no devolvió datos estructurados');
     }
-    return JSON.parse(bloque.text) as T;
+    return JSON.parse(this.limpiarJson(bloque.text)) as T;
+  }
+
+  /** Quita ```json ... ``` y cualquier texto alrededor, dejando solo el objeto JSON. */
+  private limpiarJson(texto: string): string {
+    let t = texto.trim();
+    const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) t = fence[1].trim();
+    const ini = t.indexOf('{');
+    const fin = t.lastIndexOf('}');
+    if (ini >= 0 && fin > ini) t = t.slice(ini, fin + 1);
+    return t;
   }
 }

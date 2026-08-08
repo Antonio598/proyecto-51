@@ -215,6 +215,8 @@ export class DocumentosService {
     const unidades: UnidadExtraida[] = [];
     const notas: string[] = [];
     const fallidos: string[] = [];
+    // JSON crudo por archivo (clasificación, sumas separadas, evidencia, conflictos).
+    const documentosCrudos: Array<{ archivo: string; tipoDocumento: string; datos: unknown }> = [];
     let modeloUsado = '';
     // Datos fiscales del cliente: se toma el primer RFC/razón social que aparezca
     // en cualquiera de los archivos del envío (es el mismo contratante).
@@ -229,6 +231,11 @@ export class DocumentosService {
         const contenido = await this.storage.descargar(archivo.storageKey);
         const resultado = await this.claude.extraerUnidades(contenido, archivo.mime, archivo.nombre);
         modeloUsado = resultado.modeloUsado;
+        documentosCrudos.push({
+          archivo: archivo.nombre,
+          tipoDocumento: resultado.tipoDocumento,
+          datos: resultado.crudo,
+        });
         if (!clienteRfc && resultado.cliente?.rfc?.trim()) clienteRfc = resultado.cliente.rfc.trim();
         if (!clienteRazonSocial && resultado.cliente?.razonSocial?.trim()) {
           clienteRazonSocial = resultado.cliente.razonSocial.trim();
@@ -255,6 +262,7 @@ export class DocumentosService {
         unidades: unidades.map((u) => this.sinConfianza(u)),
         cliente: { rfc: clienteRfc, razonSocial: clienteRazonSocial },
         notas: notas.join('\n'),
+        documentos: documentosCrudos,
         procesando: false,
         totalArchivos: archivos.length,
         fallidos: fallidos.length,
