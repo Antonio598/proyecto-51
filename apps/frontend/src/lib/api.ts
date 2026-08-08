@@ -319,6 +319,10 @@ export const api = {
     upload<any>('/documentos/subir', archivo, clienteId ? { clienteId } : {}),
   obtenerDocumento: (id: string) => request<any>(`/documentos/${id}`),
   enlaceDocumento: (id: string) => request<{ url: string }>(`/documentos/${id}/enlace`),
+  /** Documentos recibidos vinculados a un cliente (con sus archivos originales). */
+  documentosCliente: (clienteId: string) => request<any[]>(`/documentos/cliente/${clienteId}`),
+  enlaceArchivoDocumento: (id: string, indice: number) =>
+    request<{ url: string; nombre: string }>(`/documentos/${id}/archivo/${indice}/enlace`),
   extraerDocumento: (id: string) => request<any>(`/documentos/${id}/extraer`, { method: 'POST' }),
   revisionDocumento: (id: string) => request<any>(`/documentos/${id}/revision`),
   aprobarExtraccion: (

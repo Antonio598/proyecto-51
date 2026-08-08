@@ -117,6 +117,46 @@ export class DocumentosService {
   }
 
   /**
+   * Documentos recibidos vinculados a un cliente. Aunque ya se hayan procesado
+   * (aprobados), no se borran: aquí se ven con sus archivos originales y a qué
+   * cliente pertenecen.
+   */
+  async documentosDeCliente(clienteId: string) {
+    const docs = await this.prisma.documento.findMany({
+      where: {
+        clienteId,
+        origen: {
+          in: [OrigenDocumento.whatsapp, OrigenDocumento.portal, OrigenDocumento.manual_upload],
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { extraccion: { select: { estadoRevision: true } } },
+    });
+    return docs.map((d) => {
+      const archivos = this.archivosDe(d).map((a, i) => ({ indice: i, nombre: a.nombre, mime: a.mime }));
+      return {
+        id: d.id,
+        nombreOriginal: d.nombreOriginal,
+        origen: d.origen,
+        procesado: d.procesado,
+        createdAt: d.createdAt,
+        estadoRevision: d.extraccion?.estadoRevision ?? null,
+        totalArchivos: archivos.length,
+        archivos,
+      };
+    });
+  }
+
+  /** URL firmada de un archivo concreto dentro de un documento (paquete). */
+  async enlaceArchivo(documentoId: string, indice: number) {
+    const documento = await this.obtener(documentoId);
+    const archivos = this.archivosDe(documento);
+    const archivo = archivos[indice];
+    if (!archivo) throw new NotFoundException('Archivo no encontrado');
+    return { url: await this.storage.urlFirmada(archivo.storageKey), nombre: archivo.nombre };
+  }
+
+  /**
    * Dispara la extracción. Como puede haber muchos archivos (carpeta/ZIP) y cada
    * uno es una llamada a la IA, el trabajo corre EN SEGUNDO PLANO: se marca la
    * extracción como "procesando", se devuelve de inmediato y la pantalla de

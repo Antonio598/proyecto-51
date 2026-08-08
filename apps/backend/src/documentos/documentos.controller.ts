@@ -43,6 +43,12 @@ export class DocumentosController {
     );
   }
 
+  /** Documentos recibidos vinculados a un cliente (con sus archivos originales). */
+  @Get('cliente/:clienteId')
+  documentosDeCliente(@Param('clienteId') clienteId: string) {
+    return this.documentos.documentosDeCliente(clienteId);
+  }
+
   @Get(':id')
   obtener(@Param('id') id: string) {
     return this.documentos.obtener(id);
@@ -52,6 +58,12 @@ export class DocumentosController {
   @Get(':id/enlace')
   enlace(@Param('id') id: string) {
     return this.documentos.enlace(id);
+  }
+
+  /** URL temporal de un archivo concreto dentro de un documento (paquete). */
+  @Get(':id/archivo/:indice/enlace')
+  enlaceArchivo(@Param('id') id: string, @Param('indice') indice: string) {
+    return this.documentos.enlaceArchivo(id, Number(indice));
   }
 
   @Get(':id/revision')

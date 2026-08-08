@@ -7,6 +7,12 @@ import { api, getUsuario } from '@/lib/api';
 
 const TIPOS = ['camion', 'tractocamion', 'remolque', 'otro'];
 
+const ORIGEN: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  portal: 'Portal',
+  manual_upload: 'Subido a mano',
+};
+
 type Fmt = 'texto' | 'moneda' | 'bool';
 
 /** Campos que se muestran en cada unidad (todo lo que extrae la IA). */
@@ -64,6 +70,8 @@ export default function ClienteDetallePage() {
   );
   const [cliente, setCliente] = useState<any>(null);
   const [unidades, setUnidades] = useState<any[]>([]);
+  const [documentos, setDocumentos] = useState<any[]>([]);
+  const [docAbierto, setDocAbierto] = useState<string | null>(null);
   const [historial, setHistorial] = useState<any[]>([]);
   const [auditoria, setAuditoria] = useState<any[]>([]);
   const [error, setError] = useState('');
@@ -81,14 +89,16 @@ export default function ClienteDetallePage() {
 
   async function cargar() {
     try {
-      const [c, u, h, a] = await Promise.all([
+      const [c, u, d, h, a] = await Promise.all([
         api.obtenerCliente(id),
         api.listarUnidades(id),
+        api.documentosCliente(id).catch(() => []),
         api.historialAseguramiento(id),
         api.auditoriaCliente(id),
       ]);
       setCliente(c);
       setUnidades(u);
+      setDocumentos(d);
       setHistorial(h);
       setAuditoria(a);
     } catch (err) {
@@ -139,6 +149,15 @@ export default function ClienteDetallePage() {
       router.push('/clientes');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo eliminar el cliente');
+    }
+  }
+
+  async function abrirArchivo(docId: string, indice: number) {
+    try {
+      const { url } = await api.enlaceArchivoDocumento(docId, indice);
+      window.open(url, '_blank');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo abrir el archivo');
     }
   }
 
@@ -311,6 +330,59 @@ export default function ClienteDetallePage() {
               </div>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      {/* Documentos recibidos (archivos originales vinculados al cliente) */}
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold text-slate-800">
+          Documentos recibidos ({documentos.length})
+        </h2>
+        {documentos.length === 0 ? (
+          <p className="text-sm text-slate-400">Aún no hay documentos vinculados a este cliente.</p>
+        ) : (
+          <div className="space-y-2">
+            {documentos.map((d) => (
+              <div key={d.id} className="rounded-2xl bg-white p-4 shadow-tarjeta">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-slate-700">
+                      {d.nombreOriginal ?? 'Documento'}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {ORIGEN[d.origen] ?? d.origen} ·{' '}
+                      {new Date(d.createdAt).toLocaleDateString('es-MX')} · {d.totalArchivos}{' '}
+                      archivo(s) · {d.procesado ? 'procesado' : 'pendiente'}
+                    </div>
+                  </div>
+                  {d.totalArchivos > 0 && (
+                    <button
+                      onClick={() => setDocAbierto(docAbierto === d.id ? null : d.id)}
+                      className="shrink-0 text-sm text-marca hover:underline"
+                    >
+                      {docAbierto === d.id ? 'Ocultar archivos' : 'Ver archivos'}
+                    </button>
+                  )}
+                </div>
+                {docAbierto === d.id && (
+                  <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto">
+                    {d.archivos.map((a: any) => (
+                      <li key={a.indice} className="flex items-center gap-2">
+                        <span className="text-marca">•</span>
+                        <button
+                          onClick={() => abrirArchivo(d.id, a.indice)}
+                          className="truncate text-left text-sm text-marca hover:underline"
+                          title={a.nombre}
+                        >
+                          {a.nombre}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </section>
