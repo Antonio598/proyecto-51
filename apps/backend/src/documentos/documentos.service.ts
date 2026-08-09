@@ -397,111 +397,163 @@ export class DocumentosService {
       throw new NotFoundException('Este documento aún no tiene extracción');
     }
 
-    const resumen = await this.prisma.$transaction(async (tx) => {
-      // Datos fiscales del cliente: guardar el RFC extraído/corregido, y completar
-      // la razón social si el cliente aún tiene un nombre provisional (portal).
-      const rfc = datosCliente?.rfc?.trim();
-      const razonSocial = datosCliente?.razonSocial?.trim();
-      if (rfc || razonSocial) {
-        const cli = await tx.cliente.findUnique({
-          where: { id: clienteId },
-          select: { razonSocial: true },
-        });
-        const esProvisional = /^cliente portal/i.test(cli?.razonSocial ?? '');
-        const dataCliente: { rfc?: string; razonSocial?: string } = {};
-        if (rfc) dataCliente.rfc = rfc;
-        if (razonSocial && esProvisional) dataCliente.razonSocial = razonSocial;
-        if (Object.keys(dataCliente).length > 0) {
-          await tx.cliente.update({ where: { id: clienteId }, data: dataCliente });
-        }
-      }
+    // ── Preparación (lecturas fuera de la transacción) ──
+    // Puede haber miles de unidades: se precarga todo y se usa createMany para
+    // no hacer 2 consultas por unidad (lo que reventaba el tiempo de transacción).
 
-      const unidades = [];
-      // Caché de flotas por nombre para no crear duplicados dentro del mismo envío.
-      const flotasPorNombre = new Map<string, string>();
-      let creadas = 0;
-      let actualizadas = 0;
-
-      for (const u of unidadesCorregidas) {
-        // 1. Resolver la flota (crear si es nueva para este cliente).
-        const flotaId = await this.resolverFlota(tx, clienteId, u.flotaNombre, flotasPorNombre);
-
-        // 2. Datos de la unidad.
-        const datos = {
-          flotaId,
-          folio: u.folio ?? null,
-          tipo: (u.tipo as TipoUnidad) ?? TipoUnidad.otro,
-          aseguradoNombre: u.aseguradoNombre ?? null,
-          vin: u.vin ?? null,
-          anio: u.anio ?? null,
-          marca: u.marca ?? null,
-          modelo: u.modelo ?? null,
-          descripcion: u.descripcion ?? null,
-          numeroEconomico: u.numeroEconomico ?? null,
-          placas: u.placas ?? null,
-          numeroMotor: u.numeroMotor ?? null,
-          tipoCarga: u.tipoCarga ?? null,
-          usoUnidad: u.usoUnidad ?? null,
-          tipoCobertura: u.tipoCobertura ?? null,
-          dobleRemolque: u.dobleRemolque ?? false,
-          valorAsegurado: u.valorAsegurado ?? null,
-          tipoAdaptacion: u.tipoAdaptacion ?? null,
-          coberturaAdaptacion: u.coberturaAdaptacion ?? null,
-          sumaAseguradaAdaptacion: u.sumaAseguradaAdaptacion ?? null,
-        };
-
-        // 3. Si la unidad ya existe (mismo VIN, económico o folio), actualizarla.
-        const existente = await this.buscarUnidadExistente(tx, clienteId, u);
-        if (existente) {
-          unidades.push(
-            await tx.unidad.update({ where: { id: existente.id }, data: { ...datos, activo: true } }),
-          );
-          actualizadas++;
-        } else {
-          unidades.push(
-            await tx.unidad.create({
-              data: {
-                clienteId,
-                ...datos,
-                camposExtra: { origenDocumentoId: documentoId } as Prisma.InputJsonValue,
-              },
-            }),
-          );
-          creadas++;
-        }
-      }
-
-      await tx.extraccion.update({
-        where: { documentoId },
-        data: {
-          estadoRevision: EstadoRevision.aprobado,
-          revisadoPorId: actorUserId,
-          revisadoEn: new Date(),
-          camposExtraidos: {
-            unidades: unidadesCorregidas,
-            notas: (documento.extraccion!.camposExtraidos as any)?.notas ?? '',
-          } as unknown as Prisma.InputJsonValue,
-        },
-      });
-
-      await tx.documento.update({
-        where: { id: documentoId },
-        data: { procesado: true, clienteId },
-      });
-
-      // Al completar la extracción de un cliente, se crea su expediente en
-      // estado "vacío" (si aún no tiene ninguno), listo para empezar a trabajar.
-      let expedienteCreado = false;
-      const tieneExpediente = await tx.expediente.count({ where: { clienteId } });
-      if (tieneExpediente === 0) {
-        await tx.expediente.create({
-          data: { clienteId, estado: EstadoExpediente.vacio, createdById: actorUserId },
-        });
-        expedienteCreado = true;
-      }
-
-      return { unidades, creadas, actualizadas, expedienteCreado };
+    // 1. Flotas del cliente; crear de golpe las que falten.
+    const flotasExistentes = await this.prisma.flota.findMany({
+      where: { clienteId },
+      select: { id: true, nombre: true },
     });
+    const flotaPorNombre = new Map(flotasExistentes.map((f) => [f.nombre, f.id]));
+    const nombresNuevos = [
+      ...new Set(
+        unidadesCorregidas
+          .map((u) => (u.flotaNombre ?? '').trim())
+          .filter((n) => n && !flotaPorNombre.has(n)),
+      ),
+    ];
+    if (nombresNuevos.length > 0) {
+      await this.prisma.flota.createMany({
+        data: nombresNuevos.map((nombre) => ({ clienteId, nombre })),
+      });
+      const recargadas = await this.prisma.flota.findMany({
+        where: { clienteId, nombre: { in: nombresNuevos } },
+        select: { id: true, nombre: true },
+      });
+      for (const f of recargadas) flotaPorNombre.set(f.nombre, f.id);
+    }
+
+    // 2. Unidades existentes del cliente, para deduplicar por VIN / económico / folio.
+    const existentes = await this.prisma.unidad.findMany({
+      where: { clienteId },
+      select: { id: true, vin: true, numeroEconomico: true, folio: true },
+    });
+    const porVin = new Map<string, string>();
+    const porEco = new Map<string, string>();
+    const porFolio = new Map<string, string>();
+    for (const e of existentes) {
+      if (e.vin) porVin.set(e.vin, e.id);
+      if (e.numeroEconomico) porEco.set(e.numeroEconomico, e.id);
+      if (e.folio) porFolio.set(e.folio, e.id);
+    }
+
+    // 3. Repartir en "crear" (createMany) y "actualizar".
+    const datosDe = (u: UnidadCorregida) => {
+      const nombreFlota = (u.flotaNombre ?? '').trim();
+      return {
+        flotaId: nombreFlota ? flotaPorNombre.get(nombreFlota) ?? null : null,
+        folio: u.folio ?? null,
+        tipo: (u.tipo as TipoUnidad) ?? TipoUnidad.otro,
+        aseguradoNombre: u.aseguradoNombre ?? null,
+        vin: u.vin ?? null,
+        anio: u.anio ?? null,
+        marca: u.marca ?? null,
+        modelo: u.modelo ?? null,
+        descripcion: u.descripcion ?? null,
+        numeroEconomico: u.numeroEconomico ?? null,
+        placas: u.placas ?? null,
+        numeroMotor: u.numeroMotor ?? null,
+        tipoCarga: u.tipoCarga ?? null,
+        usoUnidad: u.usoUnidad ?? null,
+        tipoCobertura: u.tipoCobertura ?? null,
+        dobleRemolque: u.dobleRemolque ?? false,
+        valorAsegurado: u.valorAsegurado ?? null,
+        tipoAdaptacion: u.tipoAdaptacion ?? null,
+        coberturaAdaptacion: u.coberturaAdaptacion ?? null,
+        sumaAseguradaAdaptacion: u.sumaAseguradaAdaptacion ?? null,
+      };
+    };
+
+    const nuevas: Prisma.UnidadCreateManyInput[] = [];
+    const actualizaciones: Array<{ id: string; datos: ReturnType<typeof datosDe> }> = [];
+    const usados = new Set<string>();
+    for (const u of unidadesCorregidas) {
+      const vin = u.vin?.trim();
+      const eco = u.numeroEconomico?.trim();
+      const fol = u.folio?.trim();
+      const existenteId =
+        (vin && porVin.get(vin)) || (eco && porEco.get(eco)) || (fol && porFolio.get(fol)) || null;
+      const datos = datosDe(u);
+      if (existenteId && !usados.has(existenteId)) {
+        usados.add(existenteId);
+        actualizaciones.push({ id: existenteId, datos });
+      } else {
+        nuevas.push({
+          clienteId,
+          ...datos,
+          camposExtra: { origenDocumentoId: documentoId } as Prisma.InputJsonValue,
+        });
+      }
+    }
+
+    // ── Transacción (escrituras; rápidas gracias a createMany) ──
+    const metaPrevia = (documento.extraccion.camposExtraidos ?? {}) as Record<string, unknown>;
+    const resumen = await this.prisma.$transaction(
+      async (tx) => {
+        // RFC / razón social del cliente.
+        const rfc = datosCliente?.rfc?.trim();
+        const razonSocial = datosCliente?.razonSocial?.trim();
+        if (rfc || razonSocial) {
+          const cli = await tx.cliente.findUnique({
+            where: { id: clienteId },
+            select: { razonSocial: true },
+          });
+          const esProvisional = /^cliente portal/i.test(cli?.razonSocial ?? '');
+          const dataCliente: { rfc?: string; razonSocial?: string } = {};
+          if (rfc) dataCliente.rfc = rfc;
+          if (razonSocial && esProvisional) dataCliente.razonSocial = razonSocial;
+          if (Object.keys(dataCliente).length > 0) {
+            await tx.cliente.update({ where: { id: clienteId }, data: dataCliente });
+          }
+        }
+
+        // En lotes para no pasar el límite de parámetros de Postgres con miles de filas.
+        for (let i = 0; i < nuevas.length; i += 1000) {
+          await tx.unidad.createMany({ data: nuevas.slice(i, i + 1000) });
+        }
+        for (const a of actualizaciones) {
+          await tx.unidad.update({ where: { id: a.id }, data: { ...a.datos, activo: true } });
+        }
+
+        await tx.extraccion.update({
+          where: { documentoId },
+          data: {
+            estadoRevision: EstadoRevision.aprobado,
+            revisadoPorId: actorUserId,
+            revisadoEn: new Date(),
+            camposExtraidos: {
+              ...metaPrevia,
+              unidades: unidadesCorregidas,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        });
+
+        await tx.documento.update({
+          where: { id: documentoId },
+          data: { procesado: true, clienteId },
+        });
+
+        // Al completar la extracción de un cliente, se crea su expediente en
+        // estado "vacío" (si aún no tiene ninguno), listo para empezar a trabajar.
+        let expedienteCreado = false;
+        const tieneExpediente = await tx.expediente.count({ where: { clienteId } });
+        if (tieneExpediente === 0) {
+          await tx.expediente.create({
+            data: { clienteId, estado: EstadoExpediente.vacio, createdById: actorUserId },
+          });
+          expedienteCreado = true;
+        }
+
+        return {
+          creadas: nuevas.length,
+          actualizadas: actualizaciones.length,
+          expedienteCreado,
+        };
+      },
+      { timeout: 120_000, maxWait: 20_000 },
+    );
 
     await this.audit.registrar({
       entidad: 'Documento',
@@ -519,42 +571,7 @@ export class DocumentosService {
       unidadesCreadas: resumen.creadas,
       unidadesActualizadas: resumen.actualizadas,
       expedienteCreado: resumen.expedienteCreado,
-      unidades: resumen.unidades,
     };
-  }
-
-  /**
-   * Devuelve el id de la flota del cliente con ese nombre, creándola si no existe.
-   * Si el nombre viene vacío, la unidad queda sin flota.
-   */
-  private async resolverFlota(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    flotaNombre: string | null | undefined,
-    cache: Map<string, string>,
-  ): Promise<string | null> {
-    const nombre = (flotaNombre ?? '').trim();
-    if (!nombre) return null;
-    if (cache.has(nombre)) return cache.get(nombre)!;
-
-    const existente = await tx.flota.findFirst({ where: { clienteId, nombre } });
-    const flota = existente ?? (await tx.flota.create({ data: { clienteId, nombre } }));
-    cache.set(nombre, flota.id);
-    return flota.id;
-  }
-
-  /** Busca una unidad del cliente que coincida por VIN, número económico o folio. */
-  private async buscarUnidadExistente(
-    tx: Prisma.TransactionClient,
-    clienteId: string,
-    u: UnidadCorregida,
-  ) {
-    const ors: Prisma.UnidadWhereInput[] = [];
-    if (u.vin?.trim()) ors.push({ vin: u.vin.trim() });
-    if (u.numeroEconomico?.trim()) ors.push({ numeroEconomico: u.numeroEconomico.trim() });
-    if (u.folio?.trim()) ors.push({ folio: u.folio.trim() });
-    if (ors.length === 0) return null;
-    return tx.unidad.findFirst({ where: { clienteId, OR: ors } });
   }
 
   /** Descarta el documento sin crear unidades (spam, duplicado, ilegible). */

@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 /**
@@ -47,7 +48,11 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   revisarEntorno(logger);
 
-  const app = await NestFactory.create(AppModule);
+  // Se desactiva el body parser por defecto (límite 100 KB) para poner uno más
+  // amplio: aprobar una extracción grande puede mandar miles de unidades en JSON.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(json({ limit: '25mb' }));
+  app.use(urlencoded({ extended: true, limit: '25mb' }));
 
   // Detrás del proxy de EasyPanel: confiar en X-Forwarded-For para que el
   // límite de intentos del portal cuente la IP real del cliente, no la del proxy.
