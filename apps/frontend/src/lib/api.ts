@@ -308,6 +308,8 @@ export const api = {
   listarUnidades: (clienteId: string) => request<any[]>(`/clientes/${clienteId}/unidades`),
   crearUnidad: (clienteId: string, data: Record<string, unknown>) =>
     request<any>(`/clientes/${clienteId}/unidades`, { method: 'POST', body: JSON.stringify(data) }),
+  eliminarUnidad: (unidadId: string) =>
+    request<{ ok: boolean }>(`/clientes/unidades/${unidadId}`, { method: 'DELETE' }),
   historialAseguramiento: (clienteId: string) =>
     request<any[]>(`/clientes/${clienteId}/historial-aseguramiento`),
   auditoriaCliente: (clienteId: string) => request<any[]>(`/clientes/${clienteId}/auditoria`),

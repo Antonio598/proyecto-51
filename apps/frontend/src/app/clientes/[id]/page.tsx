@@ -161,6 +161,17 @@ export default function ClienteDetallePage() {
     }
   }
 
+  async function eliminarUnidad(unidadId: string) {
+    if (!confirm('¿Eliminar esta unidad? Esta acción no se puede deshacer.')) return;
+    setError('');
+    try {
+      await api.eliminarUnidad(unidadId);
+      cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar la unidad');
+    }
+  }
+
   async function eliminarFlota(flotaId: string, nombre: string) {
     if (!confirm(`¿Eliminar la flota "${nombre}"? Sus unidades no se borran, quedan sin flota asignada.`)) {
       return;
@@ -307,9 +318,19 @@ export default function ClienteDetallePage() {
                               <div className="text-sm text-marca">{moneda(u.valorAsegurado)}</div>
                             )}
                           </div>
-                          <span className="badge shrink-0 bg-marca-suave capitalize text-marca">
-                            {u.tipo}
-                          </span>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <span className="badge bg-marca-suave capitalize text-marca">
+                              {u.tipo}
+                            </span>
+                            {puedeEliminar && (
+                              <button
+                                onClick={() => eliminarUnidad(u.id)}
+                                className="text-xs text-slate-400 hover:text-red-600"
+                              >
+                                Eliminar
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
                           {campos.map((c) => (

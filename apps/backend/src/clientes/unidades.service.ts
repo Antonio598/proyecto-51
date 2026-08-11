@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -65,14 +65,23 @@ export class UnidadesService {
     return unidad;
   }
 
+  /** Borra una unidad por completo. Se bloquea si tiene pólizas (datos financieros). */
   async eliminar(id: string, actorUserId?: string) {
     const existe = await this.prisma.unidad.findUnique({ where: { id } });
     if (!existe) throw new NotFoundException('Unidad no encontrada');
-    await this.prisma.unidad.update({ where: { id }, data: { activo: false } });
+
+    const polizas = await this.prisma.poliza.count({ where: { unidadId: id } });
+    if (polizas > 0) {
+      throw new BadRequestException(
+        'La unidad tiene pólizas registradas; no se puede eliminar.',
+      );
+    }
+
+    await this.prisma.unidad.delete({ where: { id } });
     await this.audit.registrar({
       entidad: 'Unidad',
       entidadId: id,
-      accion: 'desactivar',
+      accion: 'eliminar',
       actorUserId,
     });
     return { ok: true };
