@@ -221,20 +221,35 @@ export class CobranzaService {
     for (const p of polizas) {
       const inicio = p.vigenciaInicio ?? new Date();
       const periodo = `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, '0')}`;
-      const prima = p.prima ? Number(p.prima) : 0;
       await this.prisma.corte.create({
         data: {
           polizaId: p.id,
           periodo,
           fechaCorte: inicio,
           fechaProximoPago: sumarDias(inicio, DIAS_ENTRE_CORTES),
-          montoEsperado: (prima > 0 ? Number((prima / 12).toFixed(2)) : 0) as never,
+          montoEsperado: this.montoPorPeriodo(p) as never,
           estado: EstadoCobranza.vigente,
         },
       });
       creados++;
     }
     return { creados };
+  }
+
+  /**
+   * Importe a cobrar por periodo: primaTotal / numeroPagos (datos capturados);
+   * si no hay, cae a la prima anual entre 12.
+   */
+  private montoPorPeriodo(poliza: {
+    primaTotal?: unknown;
+    numeroPagos?: number | null;
+    prima?: unknown;
+  }): number {
+    const total = poliza.primaTotal != null ? Number(poliza.primaTotal) : 0;
+    const pagos = poliza.numeroPagos ?? 0;
+    if (total > 0 && pagos > 0) return Number((total / pagos).toFixed(2));
+    const prima = poliza.prima != null ? Number(poliza.prima) : 0;
+    return prima > 0 ? Number((prima / 12).toFixed(2)) : 0;
   }
 
   // ── Utilidades internas ──
