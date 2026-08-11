@@ -58,6 +58,7 @@ export class PortalService {
     email: string;
     nombre?: string;
     loteId?: string;
+    categoria?: string;
     archivos: ArchivoSubido[];
   }) {
     if (!datos.archivos?.length) {
@@ -106,6 +107,31 @@ export class PortalService {
         })),
       );
       guardados.push(...subidos);
+    }
+
+    // 3-comprobante. Si el cliente marcó "comprobante de pago", cada archivo es
+    //     un comprobante propio: se registra con tipo comprobante_pago (va a Pagos,
+    //     no a la bandeja de flota) y se intenta conciliar.
+    if (datos.categoria === 'comprobante') {
+      const creados = [];
+      for (const g of guardados) {
+        const doc = await this.prisma.documento.create({
+          data: {
+            clienteId: cliente.id,
+            tipo: TipoDocumento.comprobante_pago,
+            origen: OrigenDocumento.portal,
+            storageKey: g.storageKey,
+            mime: g.mime,
+            nombreOriginal: g.nombre,
+            procesado: false,
+            metadata: { telefono: numero, email: datos.email, nombre: datos.nombre ?? null },
+          },
+        });
+        creados.push(doc);
+        void this.conciliarComprobante(doc.id, cliente.razonSocial);
+      }
+      this.logger.log(`Portal: ${creados.length} comprobante(s) de pago de ${numero}`);
+      return { recibidos: creados.length, clienteNuevo: creado, categoria: 'comprobante' };
     }
 
     // 3a. Si viene loteId, este es otra TANDA del mismo envío: se agregan los
@@ -444,6 +470,29 @@ export class PortalService {
       this.logger.warn(
         `No se pudo conciliar el documento ${documentoId} del portal: ${(err as Error).message}`,
       );
+    }
+  }
+
+  /**
+   * Comprobante de pago del portal: intenta leerlo y conciliarlo. Si la IA falla
+   * (sin saldo, etc.), el comprobante igual queda en Pagos (tipo comprobante_pago)
+   * y se avisa a administración para que lo revise a mano.
+   */
+  private async conciliarComprobante(documentoId: string, clienteNombre: string) {
+    try {
+      await this.conciliacion.intentar(documentoId);
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo conciliar el comprobante ${documentoId} del portal: ${(err as Error).message}`,
+      );
+      await this.notificaciones
+        .notificarRol({
+          rol: Rol.administracion,
+          titulo: 'Comprobante de pago recibido',
+          mensaje: `${clienteNombre}: llegó un comprobante por el portal que no se pudo leer automáticamente. Revísalo en Pagos.`,
+          enlace: '/pagos',
+        })
+        .catch(() => undefined);
     }
   }
 }

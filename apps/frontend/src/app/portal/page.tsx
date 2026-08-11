@@ -86,6 +86,7 @@ export default function PortalPage() {
 // ───────────────────────── Enviar documentos ─────────────────────────
 
 function FormularioEnvio() {
+  const [categoria, setCategoria] = useState<'flota' | 'comprobante'>('flota');
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
   const [nombre, setNombre] = useState('');
@@ -129,6 +130,7 @@ function FormularioEnvio() {
         email,
         nombre: nombre || undefined,
         archivos,
+        categoria,
         onProgress: (hechas, total) => setProgreso({ hechas, total }),
       });
       setListo(true);
@@ -167,6 +169,36 @@ function FormularioEnvio() {
   return (
     <form onSubmit={enviar} className="space-y-4 rounded-2xl bg-white p-6 shadow-tarjeta">
       {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+      <div>
+        <label className="label">¿Qué vas a enviar?</label>
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              ['flota', 'Documentos / pólizas'],
+              ['comprobante', 'Comprobante de pago'],
+            ] as const
+          ).map(([valor, texto]) => (
+            <button
+              key={valor}
+              type="button"
+              onClick={() => setCategoria(valor)}
+              className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition ${
+                categoria === valor
+                  ? 'border-marca bg-marca text-white'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {texto}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-slate-400">
+          {categoria === 'comprobante'
+            ? 'Tu comprobante va directo al área de pagos para aplicarlo a tu cobranza.'
+            : 'Documentos de tu flota o tus pólizas para que el despacho los procese.'}
+        </p>
+      </div>
 
       <div>
         <label className="label">
@@ -226,20 +258,28 @@ function FormularioEnvio() {
           >
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12" />
           </svg>
-          <span className="text-sm font-medium text-slate-600">Toca para elegir archivos</span>
+          <span className="text-sm font-medium text-slate-600">
+            {categoria === 'comprobante' ? 'Toca para elegir tu comprobante' : 'Toca para elegir archivos'}
+          </span>
           <span className="mt-0.5 text-xs text-slate-400">
-            Excel, PDF, fotos o un ZIP · hasta 30 MB por archivo
+            {categoria === 'comprobante'
+              ? 'PDF o foto del comprobante · hasta 30 MB'
+              : 'Excel, PDF, fotos o un ZIP · hasta 30 MB por archivo'}
           </span>
           <input
             type="file"
             multiple
-            accept=".xlsx,.xls,.csv,application/pdf,image/*,.zip,application/zip"
+            accept={
+              categoria === 'comprobante'
+                ? 'application/pdf,image/*'
+                : '.xlsx,.xls,.csv,application/pdf,image/*,.zip,application/zip'
+            }
             onChange={(e) => agregarArchivos(e.target.files)}
             className="hidden"
           />
         </label>
 
-        <div className="mt-2 flex items-center justify-center">
+        <div className={`mt-2 flex items-center justify-center ${categoria === 'comprobante' ? 'hidden' : ''}`}>
           <label className="cursor-pointer text-xs font-medium text-marca hover:underline">
             o subir una carpeta completa
             <input

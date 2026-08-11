@@ -16,4 +16,9 @@ export class SubirPortalDto {
   @IsOptional()
   @IsString()
   loteId?: string;
+
+  /** "flota" (por defecto, va a la bandeja) o "comprobante" (va a Pagos). */
+  @IsOptional()
+  @IsString()
+  categoria?: string;
 }

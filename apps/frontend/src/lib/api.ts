@@ -174,8 +174,43 @@ export async function enviarPortal(datos: {
   email: string;
   nombre?: string;
   archivos: File[];
+  categoria?: 'flota' | 'comprobante';
   onProgress?: (hechas: number, total: number) => void;
 }): Promise<{ recibidos: number; clienteNuevo: boolean }> {
+  // Comprobantes de pago: pocos y pequeños. Un solo envío directo, sin
+  // descomprimir ni tandas; el backend los manda al flujo de Pagos.
+  if (datos.categoria === 'comprobante') {
+    const validos = datos.archivos.filter((f) => extPortalOk(f.name));
+    if (validos.length === 0) {
+      throw new Error('Adjunta tu comprobante en PDF o foto.');
+    }
+    const form = new FormData();
+    form.append('telefono', datos.telefono);
+    form.append('email', datos.email);
+    if (datos.nombre) form.append('nombre', datos.nombre);
+    form.append('categoria', 'comprobante');
+    for (const archivo of validos) form.append('archivos', archivo);
+
+    const res = await fetch(`${API_URL}/api/portal/subir`, { method: 'POST', body: form });
+    if (!res.ok) {
+      let mensaje = `Error ${res.status}`;
+      if (res.status === 429) {
+        mensaje = 'Has hecho demasiados envíos seguidos. Espera unos minutos e inténtalo de nuevo.';
+      } else {
+        try {
+          const body = await res.json();
+          mensaje = Array.isArray(body.message) ? body.message.join(', ') : body.message ?? mensaje;
+        } catch {
+          /* respuesta sin JSON */
+        }
+      }
+      throw new Error(mensaje);
+    }
+    const data = await res.json();
+    datos.onProgress?.(1, 1);
+    return { recibidos: data.recibidos ?? validos.length, clienteNuevo: !!data.clienteNuevo };
+  }
+
   const expandidos = await expandirZips(datos.archivos);
   if (expandidos.length === 0) {
     throw new Error('No hay archivos válidos para enviar (Excel, PDF, fotos o un ZIP).');

@@ -42,6 +42,8 @@ export class DocumentosService {
           ],
         },
         procesado: false,
+        // Los comprobantes de pago van al flujo de Pagos, no a esta bandeja de flota.
+        tipo: { not: TipoDocumento.comprobante_pago },
       },
       orderBy: { createdAt: 'desc' },
       include: {

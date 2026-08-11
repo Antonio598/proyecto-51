@@ -40,6 +40,7 @@ export class PortalController {
       email: dto.email,
       nombre: dto.nombre,
       loteId: dto.loteId,
+      categoria: dto.categoria,
       archivos: (archivos ?? []).map((a) => ({
         buffer: a.buffer,
         nombre: a.originalname,
