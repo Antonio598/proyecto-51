@@ -41,39 +41,49 @@ export class DesgloseService {
     }
 
     const filas = cliente.polizas.map((p) => {
-      const primaAnual = p.prima ? Number(p.prima) : 0;
+      const primaNeta = p.primaNeta ? Number(p.primaNeta) : 0;
+      const gastos = p.gastosExpedicion ? Number(p.gastosExpedicion) : 0;
+      const iva = p.iva ? Number(p.iva) : 0;
+      // Total a cobrar: el capturado; si no, prima neta + gastos + IVA; si no, la prima.
+      const total = p.primaTotal
+        ? Number(p.primaTotal)
+        : primaNeta + gastos + iva || (p.prima ? Number(p.prima) : 0);
+      const pagos = p.numeroPagos ?? 12;
+      const porPeriodo = total > 0 && pagos > 0 ? Number((total / pagos).toFixed(2)) : 0;
       return [
-        p.unidad.tipo,
-        [p.unidad.marca, p.unidad.modelo].filter(Boolean).join(' ') || '—',
-        p.unidad.anio ?? '',
-        p.unidad.vin ?? '—',
-        p.aseguradora.nombre,
+        [p.unidad.marca, p.unidad.modelo].filter(Boolean).join(' ') || p.unidad.tipo,
         p.folio ?? 'pendiente',
-        primaAnual,
-        Number((primaAnual / 12).toFixed(2)),
+        p.unidad.folio ?? '—',
+        p.aseguradora.nombre,
+        primaNeta,
+        gastos,
+        total,
+        pagos,
+        porPeriodo,
       ];
     });
 
-    const totalAnual = filas.reduce((s, f) => s + Number(f[6]), 0);
-    const totalMensual = filas.reduce((s, f) => s + Number(f[7]), 0);
-    filas.push(['', '', '', '', '', 'TOTAL', totalAnual, totalMensual]);
+    const totalGeneral = filas.reduce((s, f) => s + Number(f[6]), 0);
+    const totalPorPeriodo = filas.reduce((s, f) => s + Number(f[8]), 0);
+    filas.push(['', '', '', 'TOTAL', '', '', totalGeneral, '', totalPorPeriodo]);
 
     const buffer = await this.excel.generar([
       {
         nombre: 'Desglose',
-        titulo: `Desglose de costos — ${cliente.razonSocial}`,
+        titulo: `Desglose de cobranza — ${cliente.razonSocial}`,
         encabezados: [
-          'Tipo',
-          'Marca / Modelo',
-          'Año',
-          'VIN',
+          'Unidad',
+          'No. Póliza',
+          'Inciso',
           'Aseguradora',
-          'Póliza',
-          'Prima anual',
-          'Pago mensual',
+          'Prima neta',
+          'Gastos de expedición',
+          'Total',
+          'Pagos',
+          'Importe por periodo',
         ],
         filas,
-        columnasMoneda: [6, 7],
+        columnasMoneda: [4, 5, 6, 8],
       },
     ]);
 
@@ -95,7 +105,11 @@ export class DesgloseService {
         mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         nombreOriginal: nombre,
         procesado: true,
-        metadata: { totalAnual, totalMensual, unidades: cliente.polizas.length },
+        metadata: {
+          totalAnual: totalGeneral,
+          totalMensual: totalPorPeriodo,
+          unidades: cliente.polizas.length,
+        },
       },
     });
 
@@ -104,10 +118,15 @@ export class DesgloseService {
       entidadId: documento.id,
       accion: 'generar_desglose',
       actorUserId,
-      diff: { clienteId, totalMensual },
+      diff: { clienteId, totalPorPeriodo },
     });
 
-    return { documento, totalAnual, totalMensual, unidades: cliente.polizas.length };
+    return {
+      documento,
+      totalAnual: totalGeneral,
+      totalMensual: totalPorPeriodo,
+      unidades: cliente.polizas.length,
+    };
   }
 
   /**

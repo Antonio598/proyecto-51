@@ -368,6 +368,13 @@ model Poliza {
   vigenciaInicio DateTime?
   vigenciaFin    DateTime?
   prima          Decimal?     @db.Decimal(14, 2)
+  // Cobranza: se capturan a mano (no hay API con la aseguradora). El importe por
+  // periodo = primaTotal / numeroPagos.
+  primaNeta        Decimal? @db.Decimal(14, 2)
+  gastosExpedicion Decimal? @db.Decimal(14, 2)
+  iva              Decimal? @db.Decimal(14, 2)
+  primaTotal       Decimal? @db.Decimal(14, 2)
+  numeroPagos      Int?
   estado         EstadoPoliza @default(pendiente_emision)
   pdfDocId       String?
   // Liga externa (Dropbox/nube) al PDF de la póliza. El técnico la registra a

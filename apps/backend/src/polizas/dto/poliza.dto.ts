@@ -1,5 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsNumber, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
+import {
+  IsDate,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class PrepararEmisionDto {
   @IsString()
@@ -26,6 +36,43 @@ export class CrearPorEnlaceDto {
 export class ActualizarEnlaceDto {
   @IsUrl({}, { message: 'La liga de la póliza no es una URL válida.' })
   urlNube: string;
+}
+
+export class ActualizarCobranzaDto {
+  @IsOptional()
+  @IsString()
+  folio?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  primaNeta?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  gastosExpedicion?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  iva?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  primaTotal?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  numeroPagos?: number;
 }
 
 export class MarcarEmitidaDto {

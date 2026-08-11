@@ -16,6 +16,7 @@ import { EstadoPoliza, Rol } from '@prisma/client';
 import { PolizasService } from './polizas.service';
 import { ChecklistService } from './checklist.service';
 import {
+  ActualizarCobranzaDto,
   ActualizarEnlaceDto,
   CrearPorEnlaceDto,
   MarcarEmitidaDto,
@@ -99,6 +100,17 @@ export class PolizasController {
     @CurrentUser() user: JwtUser,
   ) {
     return this.polizas.actualizarEnlace(id, dto.urlNube, user.userId);
+  }
+
+  /** Captura a mano los datos de cobranza (prima neta, gastos, total, pagos). */
+  @Roles(Rol.administracion, Rol.admin)
+  @Patch(':id/cobranza')
+  actualizarCobranza(
+    @Param('id') id: string,
+    @Body() dto: ActualizarCobranzaDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.polizas.actualizarCobranza(id, dto, user.userId);
   }
 
   /** Tras capturarla en el portal: marcar emitida + folio. Crea el primer corte. */

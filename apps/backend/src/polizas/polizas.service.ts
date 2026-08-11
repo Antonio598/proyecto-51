@@ -274,9 +274,12 @@ export class PolizasService {
 
     const inicio = datos.vigenciaInicio ?? poliza.vigenciaInicio ?? new Date();
     const fin = datos.vigenciaFin ?? poliza.vigenciaFin ?? null;
-    // Prima: la que se captura al emitir tiene prioridad sobre la prellenada.
-    const primaAnual = datos.prima ?? (poliza.prima ? Number(poliza.prima) : 0);
-    const montoMensual = primaAnual > 0 ? Number((primaAnual / 12).toFixed(2)) : 0;
+    // Importe por periodo: de los datos de cobranza capturados (primaTotal /
+    // numeroPagos); si no hay, cae a la prima anual entre 12.
+    const montoMensual = this.montoPorPeriodo({
+      ...poliza,
+      prima: datos.prima != null ? (datos.prima as never) : poliza.prima,
+    });
 
     const [actualizada] = await this.prisma.$transaction([
       this.prisma.poliza.update({
@@ -314,6 +317,82 @@ export class PolizasService {
 
     this.logger.log(`Póliza ${id} emitida con folio ${datos.folio}`);
     return actualizada;
+  }
+
+  /**
+   * Captura/actualiza a mano los datos de cobranza de la póliza (prima neta,
+   * gastos de expedición, IVA, total y número de pagos). Como no hay API con la
+   * aseguradora, estos importes se teclean desde el recibo. Si la póliza ya
+   * tiene un corte abierto, se actualiza su monto esperado al nuevo importe.
+   */
+  async actualizarCobranza(
+    id: string,
+    datos: {
+      folio?: string;
+      primaNeta?: number;
+      gastosExpedicion?: number;
+      iva?: number;
+      primaTotal?: number;
+      numeroPagos?: number;
+    },
+    actorUserId: string,
+  ) {
+    await this.obtener(id);
+
+    const poliza = await this.prisma.poliza.update({
+      where: { id },
+      data: {
+        ...(datos.folio !== undefined ? { folio: datos.folio || null } : {}),
+        ...(datos.primaNeta !== undefined ? { primaNeta: datos.primaNeta as never } : {}),
+        ...(datos.gastosExpedicion !== undefined
+          ? { gastosExpedicion: datos.gastosExpedicion as never }
+          : {}),
+        ...(datos.iva !== undefined ? { iva: datos.iva as never } : {}),
+        ...(datos.primaTotal !== undefined ? { primaTotal: datos.primaTotal as never } : {}),
+        ...(datos.numeroPagos !== undefined ? { numeroPagos: datos.numeroPagos } : {}),
+      },
+    });
+
+    // Reflejar el nuevo importe en el corte abierto (si lo hay).
+    const monto = this.montoPorPeriodo(poliza);
+    if (monto > 0) {
+      const corteAbierto = await this.prisma.corte.findFirst({
+        where: { polizaId: id, estado: { not: EstadoCobranza.pagado } },
+        orderBy: { fechaProximoPago: 'asc' },
+      });
+      if (corteAbierto) {
+        await this.prisma.corte.update({
+          where: { id: corteAbierto.id },
+          data: { montoEsperado: monto as never },
+        });
+      }
+    }
+
+    await this.audit.registrar({
+      entidad: 'Poliza',
+      entidadId: id,
+      accion: 'actualizar_cobranza',
+      actorUserId,
+      diff: { ...datos, montoPorPeriodo: monto },
+    });
+
+    return poliza;
+  }
+
+  /**
+   * Importe a cobrar por periodo: primaTotal / numeroPagos. Si no se capturaron
+   * esos datos, cae a la prima anual entre 12 (comportamiento anterior).
+   */
+  private montoPorPeriodo(poliza: {
+    primaTotal?: unknown;
+    numeroPagos?: number | null;
+    prima?: unknown;
+  }): number {
+    const total = poliza.primaTotal != null ? Number(poliza.primaTotal) : 0;
+    const pagos = poliza.numeroPagos ?? 0;
+    if (total > 0 && pagos > 0) return Number((total / pagos).toFixed(2));
+    const prima = poliza.prima != null ? Number(poliza.prima) : 0;
+    return prima > 0 ? Number((prima / 12).toFixed(2)) : 0;
   }
 
   /**

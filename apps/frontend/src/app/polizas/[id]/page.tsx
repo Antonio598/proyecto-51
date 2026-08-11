@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, getUsuario } from '@/lib/api';
 
 const ESTADO_COBRANZA: Record<string, { label: string; clase: string }> = {
   vigente: { label: 'Vigente', clase: 'bg-slate-100 text-slate-700' },
@@ -17,12 +17,25 @@ function mxn(v: unknown) {
   return Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 }
 
+const COBRANZA_VACIA = {
+  folio: '',
+  primaNeta: '',
+  gastosExpedicion: '',
+  iva: '',
+  primaTotal: '',
+  numeroPagos: '',
+};
+
 export default function PolizaDetallePage() {
   const { id } = useParams<{ id: string }>();
+  const puedeCobranza = ['administracion', 'admin'].includes(
+    (typeof window !== 'undefined' ? getUsuario()?.rol : '') ?? '',
+  );
   const [poliza, setPoliza] = useState<any>(null);
   const [facturas, setFacturas] = useState<any[]>([]);
   const [tipoSubida, setTipoSubida] = useState<'factura' | 'complemento'>('factura');
   const [enlace, setEnlace] = useState('');
+  const [cobranza, setCobranza] = useState({ ...COBRANZA_VACIA });
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -34,10 +47,40 @@ export default function PolizaDetallePage() {
       const p = await api.obtenerPoliza(id);
       setPoliza(p);
       setEnlace(p.urlNube ?? '');
+      setCobranza({
+        folio: p.folio ?? '',
+        primaNeta: p.primaNeta != null ? String(p.primaNeta) : '',
+        gastosExpedicion: p.gastosExpedicion != null ? String(p.gastosExpedicion) : '',
+        iva: p.iva != null ? String(p.iva) : '',
+        primaTotal: p.primaTotal != null ? String(p.primaTotal) : '',
+        numeroPagos: p.numeroPagos != null ? String(p.numeroPagos) : '',
+      });
       setFacturas(await api.listarFacturas(id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar');
     }
+  }
+
+  const num = (v: string) => (v.trim() === '' ? undefined : Number(v.replace(/[,$\s]/g, '')));
+  const totalSugerido =
+    (num(cobranza.primaNeta) ?? 0) + (num(cobranza.gastosExpedicion) ?? 0) + (num(cobranza.iva) ?? 0);
+  const totalEfectivo = num(cobranza.primaTotal) ?? totalSugerido;
+  const pagos = num(cobranza.numeroPagos) ?? 0;
+  const importePorPeriodo = totalEfectivo > 0 && pagos > 0 ? totalEfectivo / pagos : 0;
+
+  async function guardarCobranza() {
+    await accion(
+      () =>
+        api.actualizarCobranzaPoliza(id, {
+          folio: cobranza.folio || undefined,
+          primaNeta: num(cobranza.primaNeta),
+          gastosExpedicion: num(cobranza.gastosExpedicion),
+          iva: num(cobranza.iva),
+          primaTotal: num(cobranza.primaTotal) ?? (totalSugerido > 0 ? totalSugerido : undefined),
+          numeroPagos: num(cobranza.numeroPagos),
+        }),
+      'Datos de cobranza guardados.',
+    );
   }
 
   useEffect(() => {
@@ -188,6 +231,98 @@ export default function PolizaDetallePage() {
           />
         </div>
       </section>
+
+      {/* Datos de cobranza (captura manual) */}
+      {puedeCobranza && (
+        <section className="space-y-3 rounded-lg bg-white p-4 shadow">
+          <div>
+            <h2 className="font-semibold">Datos de cobranza</h2>
+            <p className="text-sm text-slate-500">
+              Como no hay conexión con la aseguradora, captura aquí los importes del recibo. El
+              sistema calcula el importe por periodo y lo usa en la cobranza y el desglose.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="label">No. de póliza</label>
+              <input
+                value={cobranza.folio}
+                onChange={(e) => setCobranza({ ...cobranza, folio: e.target.value })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Inciso</label>
+              <input
+                value={poliza.unidad?.folio ?? '—'}
+                disabled
+                className="input bg-slate-50 text-slate-500"
+              />
+            </div>
+            <div>
+              <label className="label">Prima neta</label>
+              <input
+                inputMode="decimal"
+                value={cobranza.primaNeta}
+                onChange={(e) => setCobranza({ ...cobranza, primaNeta: e.target.value })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Gastos de expedición</label>
+              <input
+                inputMode="decimal"
+                value={cobranza.gastosExpedicion}
+                onChange={(e) => setCobranza({ ...cobranza, gastosExpedicion: e.target.value })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">IVA</label>
+              <input
+                inputMode="decimal"
+                value={cobranza.iva}
+                onChange={(e) => setCobranza({ ...cobranza, iva: e.target.value })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">
+                Total a pagar {cobranza.primaTotal.trim() === '' && totalSugerido > 0 && (
+                  <span className="text-slate-400">(auto: {mxn(totalSugerido)})</span>
+                )}
+              </label>
+              <input
+                inputMode="decimal"
+                value={cobranza.primaTotal}
+                onChange={(e) => setCobranza({ ...cobranza, primaTotal: e.target.value })}
+                placeholder={totalSugerido > 0 ? String(totalSugerido) : ''}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Número de pagos</label>
+              <input
+                inputMode="numeric"
+                value={cobranza.numeroPagos}
+                onChange={(e) => setCobranza({ ...cobranza, numeroPagos: e.target.value })}
+                placeholder="ej. 12"
+                className="input"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={guardarCobranza} disabled={ocupado} className="btn-primary">
+              Guardar datos de cobranza
+            </button>
+            {importePorPeriodo > 0 && (
+              <span className="text-sm text-slate-600">
+                Importe por periodo: <strong className="text-marca">{mxn(importePorPeriodo)}</strong>
+              </span>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Cortes de cobranza */}
       <section className="space-y-2">

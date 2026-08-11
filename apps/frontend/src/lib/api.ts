@@ -397,6 +397,9 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ urlNube }),
     }),
+  /** Captura a mano los datos de cobranza de la póliza. */
+  actualizarCobranzaPoliza: (id: string, data: Record<string, unknown>) =>
+    request<any>(`/polizas/${id}/cobranza`, { method: 'PATCH', body: JSON.stringify(data) }),
   checklistEmision: (expedienteId: string) =>
     request<any>(`/polizas/expediente/${expedienteId}/checklist`),
   marcarPolizaEmitida: (id: string, data: Record<string, unknown>) =>
