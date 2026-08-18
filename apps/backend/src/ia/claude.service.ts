@@ -207,12 +207,12 @@ export class ClaudeService {
     const esTabla =
       this.esExcel(mime, nombreArchivo) || mime.includes('csv') || /\.csv$/i.test(nombreArchivo);
     const pista = esTabla
-      ? ' Es una hoja de cálculo con la flota en filas: clasifícalo como "listado" y extrae UNA unidad por fila (ignora encabezados, totales y filas vacías).'
+      ? ' Es una hoja de cálculo con la flota en filas: clasifícalo como "listado" y extrae UNA unidad por fila (ignora encabezados, totales y filas vacías). En un listado NO incluyas "evidencia": deja cada campo de evidencia en null para que la respuesta sea compacta.'
       : '';
 
     const stream = this.client.messages.stream({
       model: this.modelo,
-      max_tokens: 32000,
+      max_tokens: 64000,
       thinking: { type: 'adaptive' },
       system: SISTEMA_EXTRACCION,
       messages: [
@@ -230,7 +230,7 @@ export class ClaudeService {
     });
     const respuesta = await stream.finalMessage();
 
-    const crudo = this.parsearJson<ExtraccionCruda>(respuesta);
+    const crudo = this.parsearExtraccion(respuesta);
     const tipoDocumento = crudo.tipo_documento ?? 'otro';
 
     // Un recibo nunca genera unidades, aunque describa un vehículo.
@@ -522,6 +522,100 @@ Reglas estrictas:
       throw new Error('El modelo no devolvió datos estructurados');
     }
     return JSON.parse(this.limpiarJson(bloque.text)) as T;
+  }
+
+  /**
+   * Parsea la extracción del modelo tolerando respuestas recortadas. Si el JSON
+   * llegó completo, se parsea normal; si se truncó (listados enormes que se
+   * pasan del límite), se recuperan las unidades completas en vez de perder todo.
+   */
+  private parsearExtraccion(respuesta: Anthropic.Message): ExtraccionCruda {
+    const bloque = respuesta.content.find((b) => b.type === 'text');
+    if (!bloque || bloque.type !== 'text') {
+      this.logger.error(`Respuesta sin texto (stop_reason: ${respuesta.stop_reason})`);
+      throw new Error('El modelo no devolvió datos');
+    }
+    try {
+      return JSON.parse(this.limpiarJson(bloque.text)) as ExtraccionCruda;
+    } catch (e) {
+      this.logger.warn(
+        `JSON de extracción inválido (${(e as Error).message}); intentando recuperar unidades`,
+      );
+      return this.recuperarExtraccion(bloque.text);
+    }
+  }
+
+  /** Rescata la cabecera y los objetos COMPLETOS del arreglo "vehiculos" de un JSON truncado. */
+  private recuperarExtraccion(texto: string): ExtraccionCruda {
+    const t = texto.trim();
+    const marca = t.search(/"vehiculos"\s*:\s*\[/);
+    if (marca < 0) throw new Error('El modelo no devolvió un JSON reconocible');
+
+    let cab: Partial<ExtraccionCruda> = {};
+    try {
+      cab = JSON.parse(t.slice(0, marca) + '"vehiculos":[]}') as Partial<ExtraccionCruda>;
+    } catch {
+      /* sin cabecera: seguimos solo con las unidades */
+    }
+
+    const vehiculos: VehiculoCrudo[] = [];
+    for (const obj of this.objetosDeArreglo(t, t.indexOf('[', marca))) {
+      try {
+        vehiculos.push(JSON.parse(obj) as VehiculoCrudo);
+      } catch {
+        /* objeto incompleto (el corte): se descarta */
+      }
+    }
+
+    const notas = Array.isArray(cab.notas) ? [...cab.notas] : [];
+    notas.push(
+      `La respuesta de la IA se recortó por tamaño; se recuperaron ${vehiculos.length} unidad(es). Si faltan, divide el archivo en partes o vuelve a extraer.`,
+    );
+    return {
+      tipo_documento: cab.tipo_documento ?? 'listado',
+      aseguradora: cab.aseguradora ?? null,
+      asegurado: cab.asegurado ?? null,
+      rfc: cab.rfc ?? null,
+      no_poliza: cab.no_poliza ?? null,
+      vigencia_inicio: cab.vigencia_inicio ?? null,
+      vigencia_fin: cab.vigencia_fin ?? null,
+      vehiculos,
+      conflictos: cab.conflictos ?? [],
+      notas,
+    };
+  }
+
+  /** Devuelve los objetos JSON completos ({...}) de nivel superior dentro de un arreglo. */
+  private objetosDeArreglo(texto: string, inicioCorchete: number): string[] {
+    const objetos: string[] = [];
+    if (inicioCorchete < 0) return objetos;
+    let depth = 0;
+    let start = -1;
+    let inStr = false;
+    let esc = false;
+    for (let i = inicioCorchete + 1; i < texto.length; i++) {
+      const ch = texto[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === '{') {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          objetos.push(texto.slice(start, i + 1));
+          start = -1;
+        }
+      } else if (ch === ']' && depth === 0) {
+        break; // fin del arreglo
+      }
+    }
+    return objetos;
   }
 
   /** Quita ```json ... ``` y cualquier texto alrededor, dejando solo el objeto JSON. */
