@@ -56,7 +56,7 @@ interface VehiculoCrudo {
 
 /** Extracción completa de UN documento, tal como la devuelve el modelo. */
 interface ExtraccionCruda {
-  tipo_documento: 'poliza' | 'recibo' | 'endoso' | 'otro';
+  tipo_documento: 'poliza' | 'recibo' | 'endoso' | 'listado' | 'otro';
   aseguradora: string | null;
   asegurado: string | null;
   rfc: string | null;
@@ -90,17 +90,29 @@ PASO 1 — CLASIFICA el documento antes de extraer:
   o descripción en formato "<DESCRIPCIÓN> MOD. AAAA AMIS #####".
 - "endoso": contiene "Movimiento:" con valor A-ADICIONAL, B-DESCRIPTIVO,
   D-DEVOLUCION, BAJA o similar.
-- "otro": cualquier otra cosa.
+- "listado": una TABLA u hoja de cálculo (Excel/CSV) con varios vehículos en
+  filas: control de flota, vaciado, cotización o el layout del despacho. Trae
+  columnas como descripción, serie/VIN, placas, no. económico, año/modelo y
+  suma asegurada. Si el contenido es una tabla con filas de vehículos, es
+  "listado" (NUNCA "otro").
+- "otro": cualquier otra cosa (p. ej. la tarjeta de circulación, una factura o
+  una foto de UN solo vehículo). Aun así, extrae lo que traiga (ver PASO 2).
 
 REGLA CRÍTICA: si tipo_documento es "recibo", devuelve vehiculos: [] SIEMPRE.
 Un recibo nunca genera un registro de unidad, aunque describa un vehículo.
 La cadena "AMIS #####" es marca de recibo, no de póliza.
 
-PASO 2 — Si es "poliza" o "endoso", extrae UN OBJETO POR CADA bloque
-"DESCRIPCIÓN DEL VEHÍCULO ASEGURADO". Un PDF puede tener decenas. Nunca
-combines campos de bloques distintos: cada objeto se llena únicamente con
-texto que aparece dentro de su propio bloque y del encabezado de página
-inmediato (PÓLIZA / ENDOSO / INCISO).
+PASO 2 — EXTRAE los vehículos SIEMPRE, salvo que sea "recibo" (ahí vehiculos: []).
+Devuelve UN OBJETO POR CADA vehículo, tal como aparezca en el documento:
+- En "poliza"/"endoso": un objeto por bloque "DESCRIPCIÓN DEL VEHÍCULO ASEGURADO".
+- En "listado" (tabla/Excel/CSV): un objeto por cada FILA de vehículo; ignora los
+  encabezados, las filas de totales y las filas vacías. Usa las columnas de esa
+  misma fila.
+- En "otro" con un solo vehículo (tarjeta, factura, foto): un objeto con lo que
+  traiga.
+Un archivo puede tener decenas. Nunca combines campos de vehículos distintos:
+cada objeto se llena únicamente con los datos de su propio bloque, fila o
+documento (y el encabezado de página inmediato: PÓLIZA / ENDOSO / INCISO).
 
 PASO 3 — Reglas de llenado:
 - Si un campo no aparece literalmente, usa null. NUNCA infieras, deduzcas,
@@ -190,6 +202,13 @@ export class ClaudeService {
     nombreArchivo: string,
   ): Promise<ResultadoExtraccion> {
     const bloque = this.construirBloqueDocumento(contenido, mime, nombreArchivo);
+    // Pista fuerte: un Excel/CSV es casi siempre el listado de flota (filas de
+    // unidades), no una carátula de póliza. Evita que se clasifique como "otro".
+    const esTabla =
+      this.esExcel(mime, nombreArchivo) || mime.includes('csv') || /\.csv$/i.test(nombreArchivo);
+    const pista = esTabla
+      ? ' Es una hoja de cálculo con la flota en filas: clasifícalo como "listado" y extrae UNA unidad por fila (ignora encabezados, totales y filas vacías).'
+      : '';
 
     const stream = this.client.messages.stream({
       model: this.modelo,
@@ -203,7 +222,7 @@ export class ClaudeService {
             bloque,
             {
               type: 'text',
-              text: `Clasifica este documento (${nombreArchivo}) y extrae los datos según las reglas. Devuelve solo el JSON.`,
+              text: `Clasifica este documento (${nombreArchivo}) y extrae los datos según las reglas.${pista} Devuelve solo el JSON.`,
             },
           ],
         },
