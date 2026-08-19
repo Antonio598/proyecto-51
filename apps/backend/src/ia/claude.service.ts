@@ -201,15 +201,84 @@ export class ClaudeService {
     mime: string,
     nombreArchivo: string,
   ): Promise<ResultadoExtraccion> {
-    const bloque = this.construirBloqueDocumento(contenido, mime, nombreArchivo);
-    // Pista fuerte: un Excel/CSV es casi siempre el listado de flota (filas de
-    // unidades), no una carátula de póliza. Evita que se clasifique como "otro".
     const esTabla =
       this.esExcel(mime, nombreArchivo) || mime.includes('csv') || /\.csv$/i.test(nombreArchivo);
+
+    // Bloques a procesar. Un Excel se parte en tandas de filas: así un listado de
+    // cientos/miles de unidades no se recorta (cada tanda genera una salida chica).
+    // PDF/imagen es un solo bloque.
+    const bloques: Anthropic.ContentBlockParam[] = this.esExcel(mime, nombreArchivo)
+      ? this.excelABloques(contenido).map((t) => ({ type: 'text', text: t }))
+      : [this.construirBloqueDocumento(contenido, mime, nombreArchivo)];
+
+    const vehiculos: VehiculoCrudo[] = [];
+    const conflictos: NonNullable<ExtraccionCruda['conflictos']> = [];
+    const notasModelo: string[] = [];
+    let tipoDocumento = 'otro';
+    let rfc = '';
+    let asegurado = '';
+    let aseguradora: string | null = null;
+    let noPoliza: string | null = null;
+
+    for (const bloque of bloques) {
+      const crudo = await this.extraerBloque(bloque, nombreArchivo, esTabla);
+      tipoDocumento = crudo.tipo_documento ?? tipoDocumento;
+      if (!rfc && crudo.rfc?.trim()) rfc = crudo.rfc.trim();
+      if (!asegurado && crudo.asegurado?.trim()) asegurado = crudo.asegurado.trim();
+      if (!aseguradora && crudo.aseguradora) aseguradora = crudo.aseguradora;
+      if (!noPoliza && crudo.no_poliza) noPoliza = crudo.no_poliza;
+      // Un recibo nunca genera unidades, aunque describa un vehículo.
+      if (crudo.tipo_documento !== 'recibo') vehiculos.push(...(crudo.vehiculos ?? []));
+      for (const c of crudo.conflictos ?? []) conflictos.push(c);
+      if (Array.isArray(crudo.notas)) {
+        notasModelo.push(...crudo.notas.filter((n): n is string => typeof n === 'string'));
+      }
+    }
+
+    const unidades = vehiculos.map((v) => this.aUnidad(v, asegurado || null));
+
+    const notas: string[] = [...notasModelo];
+    if (tipoDocumento === 'recibo') {
+      notas.unshift('Documento clasificado como recibo de pago: no genera unidades.');
+    }
+    for (const c of conflictos) {
+      notas.push(
+        `Conflicto en ${c.campo}: ${(c.valores ?? []).join(' vs ')}${c.nota ? ` — ${c.nota}` : ''}`,
+      );
+    }
+
+    const crudo: ExtraccionCruda = {
+      tipo_documento: tipoDocumento as ExtraccionCruda['tipo_documento'],
+      aseguradora,
+      asegurado: asegurado || null,
+      rfc: rfc || null,
+      no_poliza: noPoliza,
+      vigencia_inicio: null,
+      vigencia_fin: null,
+      vehiculos,
+      conflictos,
+      notas: notasModelo,
+    };
+
+    return {
+      unidades,
+      cliente: { rfc, razonSocial: asegurado },
+      notas: notas.join('\n'),
+      tipoDocumento,
+      crudo,
+      modeloUsado: this.modelo,
+    };
+  }
+
+  /** Una llamada al modelo por bloque de documento; devuelve el JSON crudo. */
+  private async extraerBloque(
+    bloque: Anthropic.ContentBlockParam,
+    nombreArchivo: string,
+    esTabla: boolean,
+  ): Promise<ExtraccionCruda> {
     const pista = esTabla
       ? ' Es una hoja de cálculo con la flota en filas: clasifícalo como "listado" y extrae UNA unidad por fila (ignora encabezados, totales y filas vacías). En un listado NO incluyas "evidencia": deja cada campo de evidencia en null para que la respuesta sea compacta.'
       : '';
-
     const stream = this.client.messages.stream({
       model: this.modelo,
       max_tokens: 64000,
@@ -229,35 +298,37 @@ export class ClaudeService {
       ],
     });
     const respuesta = await stream.finalMessage();
+    return this.parsearExtraccion(respuesta);
+  }
 
-    const crudo = this.parsearExtraccion(respuesta);
-    const tipoDocumento = crudo.tipo_documento ?? 'otro';
-
-    // Un recibo nunca genera unidades, aunque describa un vehículo.
-    const vehiculos = tipoDocumento === 'recibo' ? [] : crudo.vehiculos ?? [];
-    const unidades = vehiculos.map((v) => this.aUnidad(v, crudo.asegurado));
-
-    // Notas: las del modelo + los conflictos, en texto legible para la revisión.
-    const notas: string[] = Array.isArray(crudo.notas)
-      ? crudo.notas.filter((n): n is string => typeof n === 'string')
-      : [];
-    if (tipoDocumento === 'recibo') {
-      notas.unshift('Documento clasificado como recibo de pago: no genera unidades.');
+  /**
+   * Convierte un Excel a bloques de texto de a lo más MAX_FILAS filas cada uno.
+   * Cada bloque de continuación lleva el encabezado (solo como contexto de
+   * columnas) para que el modelo sepa qué es cada dato sin re-extraerlo.
+   */
+  private excelABloques(contenido: Buffer): string[] {
+    const MAX_FILAS = 250;
+    const libro = XLSX.read(contenido, { type: 'buffer' });
+    const bloques: string[] = [];
+    for (const nombre of libro.SheetNames) {
+      const csv = XLSX.utils.sheet_to_csv(libro.Sheets[nombre], { blankrows: false });
+      const filas = csv.split('\n').filter((l) => l.trim() !== '');
+      if (filas.length === 0) continue;
+      if (filas.length <= MAX_FILAS) {
+        bloques.push(this.limitarTexto(`--- Hoja: ${nombre} ---\n${filas.join('\n')}`));
+        continue;
+      }
+      const encabezado = filas.slice(0, Math.min(5, filas.length)).join('\n');
+      for (let i = 0; i < filas.length; i += MAX_FILAS) {
+        const trozo = filas.slice(i, i + MAX_FILAS).join('\n');
+        const texto =
+          i === 0
+            ? `--- Hoja: ${nombre} ---\n${trozo}`
+            : `--- Hoja: ${nombre} (continuación) ---\nENCABEZADO (solo para saber las columnas; NO extraigas unidades de estas líneas):\n${encabezado}\n\nFILAS A EXTRAER:\n${trozo}`;
+        bloques.push(this.limitarTexto(texto));
+      }
     }
-    for (const c of crudo.conflictos ?? []) {
-      notas.push(
-        `Conflicto en ${c.campo}: ${(c.valores ?? []).join(' vs ')}${c.nota ? ` — ${c.nota}` : ''}`,
-      );
-    }
-
-    return {
-      unidades,
-      cliente: { rfc: crudo.rfc ?? '', razonSocial: crudo.asegurado ?? '' },
-      notas: notas.join('\n'),
-      tipoDocumento,
-      crudo,
-      modeloUsado: this.modelo,
-    };
+    return bloques.length ? bloques : ['(hoja vacía)'];
   }
 
   /** Mapea un vehículo del esquema de póliza a la unidad interna del sistema. */

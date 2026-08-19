@@ -104,9 +104,10 @@ const MIME_PORTAL: Record<string, string> = {
   webp: 'image/webp',
   gif: 'image/gif',
 };
-/** Tamaño objetivo por tanda (~8 MB): mantiene cada petición pequeña. */
-const TAM_TANDA = 8 * 1024 * 1024;
-const MAX_POR_TANDA = 20;
+/** Tamaño objetivo por tanda (~12 MB): mantiene cada petición manejable incluso
+ *  en envíos grandes (hasta ~500 MB en total, repartidos en muchas tandas). */
+const TAM_TANDA = 12 * 1024 * 1024;
+const MAX_POR_TANDA = 30;
 
 function extPortalOk(nombre: string): boolean {
   return EXT_PORTAL.includes((nombre.split('.').pop() ?? '').toLowerCase());

@@ -23,15 +23,15 @@ export class PortalController {
 
   @Public()
   @UseGuards(ThrottlerGuard)
-  // Límite holgado: un envío grande se sube en muchas tandas pequeñas, así que
-  // cada envío son muchas peticiones. Aun así, acota el abuso por IP.
-  @Throttle({ default: { ttl: 600_000, limit: 300 } })
+  // Límite holgado: un envío grande (hasta ~500 MB) se sube en muchas tandas
+  // pequeñas, así que cada envío son muchas peticiones. Aun así, acota el abuso por IP.
+  @Throttle({ default: { ttl: 600_000, limit: 1200 } })
   @Post('subir')
   @UseInterceptors(
     // Cada tanda es pequeña (el navegador descomprime y reparte). Se deja margen
     // holgado por archivo por si alguien sube un solo archivo grande.
-    FilesInterceptor('archivos', 30, {
-      limits: { fileSize: 20 * 1024 * 1024, files: 30 },
+    FilesInterceptor('archivos', 40, {
+      limits: { fileSize: 60 * 1024 * 1024, files: 40 },
     }),
   )
   subir(@UploadedFiles() archivos: Express.Multer.File[], @Body() dto: SubirPortalDto) {

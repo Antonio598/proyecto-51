@@ -9,12 +9,13 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 /** Extensiones de contenido que el portal acepta (dentro o fuera de un ZIP). */
 const EXTENSIONES_OK = ['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
-/** Tamaño máximo por archivo de contenido (15 MB). */
-const TAM_MAX = 15 * 1024 * 1024;
-/** Tamaño máximo por archivo entrante, incluido un ZIP (80 MB). */
-const TAM_MAX_ENTRANTE = 80 * 1024 * 1024;
-/** Tope de archivos por envío (acumulado entre tandas). */
-const MAX_ARCHIVOS = 1000;
+/** Tamaño máximo por archivo de contenido (60 MB). */
+const TAM_MAX = 60 * 1024 * 1024;
+/** Tamaño máximo por archivo entrante, incluido un ZIP suelto (60 MB por petición). */
+const TAM_MAX_ENTRANTE = 60 * 1024 * 1024;
+/** Tope de archivos por envío (acumulado entre tandas). Un envío grande (~500 MB)
+ *  puede traer miles de archivos chicos. */
+const MAX_ARCHIVOS = 6000;
 /** Cuántos archivos se suben al almacén a la vez (para no tardar de más). */
 const CONCURRENCIA_SUBIDA = 5;
 
