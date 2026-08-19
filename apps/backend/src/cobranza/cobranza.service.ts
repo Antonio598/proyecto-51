@@ -1,11 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EstadoCobranza, EstadoPoliza } from '@prisma/client';
+import { EstadoCobranza } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
-import { DIAS_ENTRE_CORTES, sumarDias } from '../polizas/polizas.service';
+import { PolizasMadreService } from './polizas-madre.service';
+import { sumarDiasNaturales } from './plan-pagos';
 
-/** Días de anticipación con los que un corte se marca "por vencer". */
+/** Días de anticipación con los que una parcialidad se marca "por vencer". */
 const DIAS_AVISO = 5;
+
+type CorteMadreConCliente = Awaited<ReturnType<CobranzaService['cargarCortesAbiertos']>>[number];
 
 @Injectable()
 export class CobranzaService {
@@ -14,60 +17,67 @@ export class CobranzaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly whatsapp: WhatsappService,
+    private readonly polizasMadre: PolizasMadreService,
   ) {}
 
-  /**
-   * Módulo 9 — proceso que corre n8n periódicamente.
-   * Actualiza los estados de cobranza y envía recordatorios por WhatsApp.
-   */
-  async procesarCiclo(opciones: { enviarRecordatorios?: boolean } = {}) {
-    const hoy = this.hoy();
-    const limiteAviso = sumarDias(hoy, DIAS_AVISO);
-
-    const cortes = await this.prisma.corte.findMany({
+  private cargarCortesAbiertos() {
+    return this.prisma.corteMadre.findMany({
       where: { estado: { not: EstadoCobranza.pagado } },
       include: {
-        poliza: {
+        polizaMadre: {
           include: {
             cliente: { select: { id: true, razonSocial: true, whatsappNumber: true } },
             aseguradora: { select: { nombre: true } },
           },
         },
       },
+      orderBy: { fechaVencimiento: 'asc' },
     });
+  }
+
+  /**
+   * Proceso que corre n8n periódicamente: actualiza los estados de cobranza a
+   * nivel Póliza Madre y envía recordatorios (uno por cliente).
+   */
+  async procesarCiclo(opciones: { enviarRecordatorios?: boolean } = {}) {
+    const hoy = this.hoy();
+    const limiteAviso = sumarDiasNaturales(hoy, DIAS_AVISO);
+
+    const cortes = await this.cargarCortesAbiertos();
 
     let vencidos = 0;
     let porVencer = 0;
     const recordatorios: { cliente: string; enviado: boolean; motivo?: string }[] = [];
 
-    // 1. Recalcular el estado de cada corte.
+    // 1. Recalcular el estado de cada parcialidad abierta.
     for (const corte of cortes) {
       let nuevo: EstadoCobranza = EstadoCobranza.vigente;
-      if (corte.fechaProximoPago < hoy) {
+      if (corte.fechaVencimiento < hoy) {
         nuevo = EstadoCobranza.vencido;
         vencidos++;
-      } else if (corte.fechaProximoPago <= limiteAviso) {
+      } else if (corte.fechaVencimiento <= limiteAviso) {
         nuevo = EstadoCobranza.por_vencer;
         porVencer++;
       }
       if (nuevo !== corte.estado) {
-        await this.prisma.corte.update({ where: { id: corte.id }, data: { estado: nuevo } });
+        await this.prisma.corteMadre.update({ where: { id: corte.id }, data: { estado: nuevo } });
       }
       corte.estado = nuevo;
     }
 
-    // 2. Un recordatorio por cliente (no uno por unidad, para no saturarlo).
+    // 2. Un recordatorio por cliente (no uno por Madre) para no saturarlo.
     if (opciones.enviarRecordatorios !== false) {
-      const porCliente = new Map<string, typeof cortes>();
+      const porCliente = new Map<string, CorteMadreConCliente[]>();
       for (const corte of cortes) {
         if (corte.estado === EstadoCobranza.vigente) continue;
-        const lista = porCliente.get(corte.poliza.clienteId) ?? [];
+        const key = corte.polizaMadre.clienteId;
+        const lista = porCliente.get(key) ?? [];
         lista.push(corte);
-        porCliente.set(corte.poliza.clienteId, lista);
+        porCliente.set(key, lista);
       }
 
       for (const [, lista] of porCliente) {
-        const cliente = lista[0].poliza.cliente;
+        const cliente = lista[0].polizaMadre.cliente;
         if (!cliente.whatsappNumber) {
           recordatorios.push({
             cliente: cliente.razonSocial,
@@ -96,7 +106,7 @@ export class CobranzaService {
     }
 
     this.logger.log(
-      `Ciclo de cobranza: ${cortes.length} cortes revisados, ${vencidos} vencidos, ${porVencer} por vencer`,
+      `Ciclo de cobranza: ${cortes.length} parcialidades revisadas, ${vencidos} vencidas, ${porVencer} por vencer`,
     );
     return {
       revisados: cortes.length,
@@ -107,21 +117,9 @@ export class CobranzaService {
     };
   }
 
-  /** Dashboard de cobranza: qué está vigente, por vencer y vencido. */
+  /** Dashboard de cobranza a nivel Póliza Madre. */
   async dashboard() {
-    const cortes = await this.prisma.corte.findMany({
-      where: { estado: { not: EstadoCobranza.pagado } },
-      include: {
-        poliza: {
-          include: {
-            cliente: { select: { id: true, razonSocial: true } },
-            unidad: { select: { vin: true, marca: true, modelo: true } },
-            aseguradora: { select: { nombre: true } },
-          },
-        },
-      },
-      orderBy: { fechaProximoPago: 'asc' },
-    });
+    const cortes = await this.cargarCortesAbiertos();
 
     const resumen = {
       vigente: { cantidad: 0, monto: 0 },
@@ -141,7 +139,7 @@ export class CobranzaService {
         grupo.monto += monto;
       }
 
-      const cliente = c.poliza.cliente;
+      const cliente = c.polizaMadre.cliente;
       const acumulado = porCliente.get(cliente.id) ?? {
         clienteId: cliente.id,
         razonSocial: cliente.razonSocial,
@@ -160,96 +158,53 @@ export class CobranzaService {
       porCliente: [...porCliente.values()].sort((a, b) => b.vencido - a.vencido),
       cortes: cortes.map((c) => ({
         id: c.id,
+        madreId: c.polizaMadreId,
+        numeroParcialidad: c.numeroParcialidad,
+        esPrimerPago: c.esPrimerPago,
         periodo: c.periodo,
         estado: c.estado,
-        fechaProximoPago: c.fechaProximoPago,
+        fechaVencimiento: c.fechaVencimiento,
         montoEsperado: c.montoEsperado,
-        cliente: c.poliza.cliente,
-        aseguradora: c.poliza.aseguradora.nombre,
-        polizaId: c.polizaId,
-        folio: c.poliza.folio,
-        unidad: c.poliza.unidad,
+        cliente: c.polizaMadre.cliente,
+        aseguradora: c.polizaMadre.aseguradora.nombre,
       })),
     };
   }
 
   /**
-   * Cierra el corte pagado y abre el siguiente a 30 días naturales.
-   * Se invoca al confirmar que el pago ya se aplicó en el portal.
+   * Cierra la parcialidad pagada y abre la siguiente. Delegado en el servicio de
+   * Póliza Madre (unidad de cobranza vigente). Recibe el id del CorteMadre.
    */
-  async cerrarYAbrirSiguiente(corteId: string) {
-    const corte = await this.prisma.corte.findUnique({
-      where: { id: corteId },
-      include: { poliza: true },
-    });
-    if (!corte) return null;
-
-    const siguienteCorte = corte.fechaProximoPago;
-    const siguientePago = sumarDias(siguienteCorte, DIAS_ENTRE_CORTES);
-    const periodo = `${siguienteCorte.getFullYear()}-${String(
-      siguienteCorte.getMonth() + 1,
-    ).padStart(2, '0')}`;
-
-    const [, nuevo] = await this.prisma.$transaction([
-      this.prisma.corte.update({
-        where: { id: corteId },
-        data: { estado: EstadoCobranza.pagado },
-      }),
-      this.prisma.corte.upsert({
-        where: { polizaId_periodo: { polizaId: corte.polizaId, periodo } },
-        create: {
-          polizaId: corte.polizaId,
-          periodo,
-          fechaCorte: siguienteCorte,
-          fechaProximoPago: siguientePago,
-          montoEsperado: corte.montoEsperado,
-          estado: EstadoCobranza.vigente,
-        },
-        update: {},
-      }),
-    ]);
-
-    return nuevo;
-  }
-
-  /** Regenera cortes faltantes de pólizas emitidas (red de seguridad del cron). */
-  async asegurarCortes() {
-    const polizas = await this.prisma.poliza.findMany({
-      where: { estado: EstadoPoliza.emitida, cortes: { none: {} } },
-    });
-    let creados = 0;
-    for (const p of polizas) {
-      const inicio = p.vigenciaInicio ?? new Date();
-      const periodo = `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, '0')}`;
-      await this.prisma.corte.create({
-        data: {
-          polizaId: p.id,
-          periodo,
-          fechaCorte: inicio,
-          fechaProximoPago: sumarDias(inicio, DIAS_ENTRE_CORTES),
-          montoEsperado: this.montoPorPeriodo(p) as never,
-          estado: EstadoCobranza.vigente,
-        },
-      });
-      creados++;
-    }
-    return { creados };
+  async cerrarYAbrirSiguiente(corteMadreId: string) {
+    const res = await this.polizasMadre.cerrarParcialidad(corteMadreId);
+    return res.siguiente;
   }
 
   /**
-   * Importe a cobrar por periodo: primaTotal / numeroPagos (datos capturados);
-   * si no hay, cae a la prima anual entre 12.
+   * Red de seguridad del cron: vincula pólizas emitidas sueltas a su Madre y
+   * regenera la parcialidad abierta de cada Madre con plan configurado.
    */
-  private montoPorPeriodo(poliza: {
-    primaTotal?: unknown;
-    numeroPagos?: number | null;
-    prima?: unknown;
-  }): number {
-    const total = poliza.primaTotal != null ? Number(poliza.primaTotal) : 0;
-    const pagos = poliza.numeroPagos ?? 0;
-    if (total > 0 && pagos > 0) return Number((total / pagos).toFixed(2));
-    const prima = poliza.prima != null ? Number(poliza.prima) : 0;
-    return prima > 0 ? Number((prima / 12).toFixed(2)) : 0;
+  async asegurarCortes() {
+    // 1. Vincular pólizas emitidas que se quedaron sin Madre.
+    const sueltas = await this.prisma.poliza.findMany({
+      where: { estado: 'emitida', polizaMadreId: null },
+      select: { id: true, vigenciaInicio: true },
+    });
+    for (const p of sueltas) {
+      await this.polizasMadre.vincularHija(p.id, {
+        fechaEmision: p.vigenciaInicio ?? new Date(),
+      });
+    }
+
+    // 2. Regenerar el corte abierto de cada Madre con emisión y total.
+    const madres = await this.prisma.polizaMadre.findMany({ select: { id: true } });
+    let regenerados = 0;
+    for (const m of madres) {
+      await this.polizasMadre.recalcularTotales(m.id);
+      regenerados++;
+    }
+
+    return { vinculadas: sueltas.length, madresRevisadas: regenerados };
   }
 
   // ── Utilidades internas ──
@@ -262,13 +217,13 @@ export class CobranzaService {
 
   private textoRecordatorio(
     razonSocial: string,
-    cortes: { estado: EstadoCobranza; fechaProximoPago: Date; montoEsperado: unknown }[],
+    cortes: { estado: EstadoCobranza; fechaVencimiento: Date; montoEsperado: unknown }[],
   ): string {
     const vencidos = cortes.filter((c) => c.estado === EstadoCobranza.vencido);
     const total = cortes.reduce((s, c) => s + (c.montoEsperado ? Number(c.montoEsperado) : 0), 0);
     const monto = total.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
     const fecha = cortes
-      .map((c) => c.fechaProximoPago)
+      .map((c) => c.fechaVencimiento)
       .sort((a, b) => a.getTime() - b.getTime())[0]
       .toLocaleDateString('es-MX');
 

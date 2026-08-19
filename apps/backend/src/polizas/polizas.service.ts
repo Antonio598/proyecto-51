@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
-  EstadoCobranza,
   EstadoExpediente,
   EstadoPoliza,
   OrigenDocumento,
@@ -12,6 +11,7 @@ import { StorageService } from '../storage/storage.service';
 import { ClaudeService } from '../ia/claude.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { PolizasMadreService } from '../cobranza/polizas-madre.service';
 
 /** Días naturales entre cortes de cobranza. */
 export const DIAS_ENTRE_CORTES = 30;
@@ -32,6 +32,7 @@ export class PolizasService {
     private readonly claude: ClaudeService,
     private readonly audit: AuditService,
     private readonly notificaciones: NotificacionesService,
+    private readonly polizasMadre: PolizasMadreService,
   ) {}
 
   /**
@@ -259,8 +260,10 @@ export class PolizasService {
   }
 
   /**
-   * Marca la póliza como emitida tras capturarla en el portal.
-   * Crea el primer corte de cobranza (30 días naturales) automáticamente.
+   * Marca la póliza como emitida tras capturarla en el portal. La vincula a su
+   * Póliza Madre (una por cliente+aseguradora) y deja que ésta arranque el plan
+   * de cobranza (parcialidades). No crea cortes por póliza: la cobranza vive en
+   * la Madre.
    */
   async marcarEmitida(
     id: string,
@@ -274,38 +277,20 @@ export class PolizasService {
 
     const inicio = datos.vigenciaInicio ?? poliza.vigenciaInicio ?? new Date();
     const fin = datos.vigenciaFin ?? poliza.vigenciaFin ?? null;
-    // Importe por periodo: de los datos de cobranza capturados (primaTotal /
-    // numeroPagos); si no hay, cae a la prima anual entre 12.
-    const montoMensual = this.montoPorPeriodo({
-      ...poliza,
-      prima: datos.prima != null ? (datos.prima as never) : poliza.prima,
+
+    const actualizada = await this.prisma.poliza.update({
+      where: { id },
+      data: {
+        folio: datos.folio,
+        estado: EstadoPoliza.emitida,
+        vigenciaInicio: inicio,
+        vigenciaFin: fin,
+        ...(datos.prima != null ? { prima: datos.prima as never } : {}),
+      },
     });
 
-    const [actualizada] = await this.prisma.$transaction([
-      this.prisma.poliza.update({
-        where: { id },
-        data: {
-          folio: datos.folio,
-          estado: EstadoPoliza.emitida,
-          vigenciaInicio: inicio,
-          vigenciaFin: fin,
-          ...(datos.prima != null ? { prima: datos.prima as never } : {}),
-        },
-      }),
-      // Primer corte: la fecha del siguiente pago es corte + 30 días naturales.
-      this.prisma.corte.upsert({
-        where: { polizaId_periodo: { polizaId: id, periodo: this.periodoDe(inicio) } },
-        create: {
-          polizaId: id,
-          periodo: this.periodoDe(inicio),
-          fechaCorte: inicio,
-          fechaProximoPago: sumarDias(inicio, DIAS_ENTRE_CORTES),
-          montoEsperado: montoMensual as never,
-          estado: EstadoCobranza.vigente,
-        },
-        update: {},
-      }),
-    ]);
+    // Vincula la hija a su Madre y, si es la primera emisión, ancla el plan.
+    await this.polizasMadre.vincularHija(id, { fechaEmision: inicio });
 
     await this.audit.registrar({
       entidad: 'Poliza',
@@ -330,6 +315,7 @@ export class PolizasService {
     datos: {
       folio?: string;
       primaNeta?: number;
+      financiamiento?: number;
       gastosExpedicion?: number;
       iva?: number;
       primaTotal?: number;
@@ -344,6 +330,9 @@ export class PolizasService {
       data: {
         ...(datos.folio !== undefined ? { folio: datos.folio || null } : {}),
         ...(datos.primaNeta !== undefined ? { primaNeta: datos.primaNeta as never } : {}),
+        ...(datos.financiamiento !== undefined
+          ? { financiamiento: datos.financiamiento as never }
+          : {}),
         ...(datos.gastosExpedicion !== undefined
           ? { gastosExpedicion: datos.gastosExpedicion as never }
           : {}),
@@ -353,46 +342,19 @@ export class PolizasService {
       },
     });
 
-    // Reflejar el nuevo importe en el corte abierto (si lo hay).
-    const monto = this.montoPorPeriodo(poliza);
-    if (monto > 0) {
-      const corteAbierto = await this.prisma.corte.findFirst({
-        where: { polizaId: id, estado: { not: EstadoCobranza.pagado } },
-        orderBy: { fechaProximoPago: 'asc' },
-      });
-      if (corteAbierto) {
-        await this.prisma.corte.update({
-          where: { id: corteAbierto.id },
-          data: { montoEsperado: monto as never },
-        });
-      }
-    }
+    // El desglose manual vive por hija; la Madre recalcula su total y refresca
+    // la parcialidad abierta. Si la póliza aún no tiene Madre, se crea/vincula.
+    await this.polizasMadre.vincularHija(id);
 
     await this.audit.registrar({
       entidad: 'Poliza',
       entidadId: id,
       accion: 'actualizar_cobranza',
       actorUserId,
-      diff: { ...datos, montoPorPeriodo: monto },
+      diff: { ...datos },
     });
 
     return poliza;
-  }
-
-  /**
-   * Importe a cobrar por periodo: primaTotal / numeroPagos. Si no se capturaron
-   * esos datos, cae a la prima anual entre 12 (comportamiento anterior).
-   */
-  private montoPorPeriodo(poliza: {
-    primaTotal?: unknown;
-    numeroPagos?: number | null;
-    prima?: unknown;
-  }): number {
-    const total = poliza.primaTotal != null ? Number(poliza.primaTotal) : 0;
-    const pagos = poliza.numeroPagos ?? 0;
-    if (total > 0 && pagos > 0) return Number((total / pagos).toFixed(2));
-    const prima = poliza.prima != null ? Number(poliza.prima) : 0;
-    return prima > 0 ? Number((prima / 12).toFixed(2)) : 0;
   }
 
   /**

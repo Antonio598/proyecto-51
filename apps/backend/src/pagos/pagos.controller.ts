@@ -10,7 +10,7 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
 class RegistrarPagoDto {
   @IsString()
-  corteId: string;
+  corteMadreId: string;
 
   @IsString()
   documentoId: string;

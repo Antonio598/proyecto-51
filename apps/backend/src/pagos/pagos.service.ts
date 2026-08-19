@@ -20,7 +20,7 @@ export class PagosService {
    */
   async registrarDesdeComprobante(
     datos: {
-      corteId: string;
+      corteMadreId: string;
       documentoId: string;
       monto: number;
       fecha: Date;
@@ -28,16 +28,22 @@ export class PagosService {
     },
     actorUserId: string,
   ) {
-    const corte = await this.prisma.corte.findUnique({
-      where: { id: datos.corteId },
-      include: { poliza: true },
+    const corte = await this.prisma.corteMadre.findUnique({
+      where: { id: datos.corteMadreId },
+      include: { polizaMadre: { include: { hijas: { take: 1, orderBy: { createdAt: 'asc' } } } } },
     });
-    if (!corte) throw new NotFoundException('Corte de cobranza no encontrado');
+    if (!corte) throw new NotFoundException('Parcialidad de cobranza no encontrada');
+    // El pago se aplica a la Madre; se ancla a una hija representativa porque el
+    // modelo Pago exige póliza. El vínculo real es `corteMadreId`.
+    const hija = corte.polizaMadre.hijas[0];
+    if (!hija) {
+      throw new BadRequestException('La Póliza Madre no tiene pólizas a las cuales aplicar el pago');
+    }
 
     const pago = await this.prisma.pago.create({
       data: {
-        polizaId: corte.polizaId,
-        corteId: corte.id,
+        polizaId: hija.id,
+        corteMadreId: corte.id,
         fecha: datos.fecha,
         monto: datos.monto as never,
         forma: datos.forma ?? FormaPago.transferencia,
@@ -52,7 +58,7 @@ export class PagosService {
       entidadId: pago.id,
       accion: 'registrar',
       actorUserId,
-      diff: { corteId: corte.id, monto: datos.monto },
+      diff: { corteMadreId: corte.id, monto: datos.monto },
     });
 
     return pago;
@@ -71,7 +77,7 @@ export class PagosService {
             unidad: { select: { vin: true, marca: true, modelo: true } },
           },
         },
-        corte: true,
+        corteMadre: true,
       },
     });
   }
@@ -94,9 +100,9 @@ export class PagosService {
       data: { aplicadoEnPortal: true },
     });
 
-    // Cierra el corte pagado y abre automáticamente el siguiente.
-    const siguiente = pago.corteId
-      ? await this.cobranza.cerrarYAbrirSiguiente(pago.corteId)
+    // Cierra la parcialidad pagada de la Madre y abre automáticamente la siguiente.
+    const siguiente = pago.corteMadreId
+      ? await this.cobranza.cerrarYAbrirSiguiente(pago.corteMadreId)
       : null;
 
     // El comprobante deja de estar pendiente en la bandeja.
@@ -123,7 +129,7 @@ export class PagosService {
     return this.prisma.pago.findMany({
       where: { polizaId },
       orderBy: { fecha: 'desc' },
-      include: { corte: true },
+      include: { corteMadre: true },
     });
   }
 }

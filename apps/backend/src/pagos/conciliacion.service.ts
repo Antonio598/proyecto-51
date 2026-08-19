@@ -55,25 +55,27 @@ export class ConciliacionService {
       return { conciliado: false, motivo: 'no parece un comprobante', lectura };
     }
 
-    // 2. Buscar cortes abiertos del cliente y puntuar candidatos.
-    const cortes = await this.prisma.corte.findMany({
+    // 2. Buscar parcialidades abiertas de las Pólizas Madre del cliente y puntuar.
+    //    La cobranza vive en la Madre; `polizaId` del candidato lleva el id de la
+    //    Madre (unidad contra la que se registra el pago).
+    const cortes = await this.prisma.corteMadre.findMany({
       where: {
         estado: { not: EstadoCobranza.pagado },
-        poliza: { clienteId: documento.clienteId },
+        polizaMadre: { clienteId: documento.clienteId },
       },
-      include: { poliza: { include: { aseguradora: true } } },
-      orderBy: { fechaProximoPago: 'asc' },
+      include: { polizaMadre: { include: { aseguradora: true } } },
+      orderBy: { fechaVencimiento: 'asc' },
     });
 
     const candidatos = puntuarCandidatos(
       cortes.map((c) => ({
         id: c.id,
-        polizaId: c.polizaId,
-        periodo: c.periodo,
+        polizaId: c.polizaMadreId,
+        periodo: `${c.periodo} · parcialidad ${c.numeroParcialidad}`,
         montoEsperado: c.montoEsperado ? Number(c.montoEsperado) : 0,
-        fechaProximoPago: c.fechaProximoPago,
-        folio: c.poliza.folio,
-        aseguradora: c.poliza.aseguradora.nombre,
+        fechaProximoPago: c.fechaVencimiento,
+        folio: null,
+        aseguradora: c.polizaMadre.aseguradora.nombre,
       })),
       lectura.monto,
       lectura.fecha ? new Date(lectura.fecha) : null,

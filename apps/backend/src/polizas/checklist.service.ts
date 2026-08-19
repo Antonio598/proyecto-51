@@ -115,16 +115,20 @@ export class ChecklistService {
       where: { id: pagoId },
       include: {
         poliza: { include: { aseguradora: true, cliente: true, unidad: true } },
-        corte: true,
+        corteMadre: true,
       },
     });
     if (!pago) throw new NotFoundException('Pago no encontrado');
+
+    const periodoAplicar = pago.corteMadre
+      ? `${pago.corteMadre.periodo} · parcialidad ${pago.corteMadre.numeroParcialidad}`
+      : '—';
 
     const campos: CampoChecklist[] = [
       { orden: 1, etiqueta: 'Aseguradora (portal)', valor: pago.poliza.aseguradora.nombre },
       { orden: 2, etiqueta: 'Número de póliza', valor: pago.poliza.folio ?? 'PENDIENTE' },
       { orden: 3, etiqueta: 'Cliente', valor: pago.poliza.cliente.razonSocial },
-      { orden: 4, etiqueta: 'Periodo a aplicar', valor: pago.corte?.periodo ?? '—' },
+      { orden: 4, etiqueta: 'Periodo a aplicar', valor: periodoAplicar },
       { orden: 5, etiqueta: 'Importe del pago', valor: formatearMoneda(Number(pago.monto)) },
       {
         orden: 6,

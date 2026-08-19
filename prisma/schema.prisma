@@ -90,6 +90,16 @@ enum FormaPago {
   otro
 }
 
+// Periodicidad de pago (la "forma de pago" del cliente): determina cuántas
+// parcialidades tiene el plan y cada cuántos meses vencen. NO confundir con
+// FormaPago (que es el MÉTODO de pago: transferencia/efectivo/…).
+enum Periodicidad {
+  de_contado
+  mensual
+  bimestral
+  trimestral
+}
+
 // ───────────────────────── Usuarios ─────────────────────────
 
 model User {
@@ -149,6 +159,7 @@ model Cliente {
   flotas       Flota[]
   expedientes  Expediente[]
   polizas      Poliza[]
+  polizasMadre PolizaMadre[]
   documentos   Documento[]
 
   @@index([razonSocial])
@@ -221,8 +232,9 @@ model Aseguradora {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  propuestas PropuestaAseguradora[]
-  polizas    Poliza[]
+  propuestas   PropuestaAseguradora[]
+  polizas      Poliza[]
+  polizasMadre PolizaMadre[]
 }
 
 // ───────────────────────── Expediente (flujo) ─────────────────────────
@@ -364,13 +376,17 @@ model Poliza {
   aseguradora    Aseguradora  @relation(fields: [aseguradoraId], references: [id])
   expedienteId   String?
   expediente     Expediente?  @relation(fields: [expedienteId], references: [id])
+  // Póliza Madre a la que pertenece esta hija/endoso (una Madre por cliente+aseguradora).
+  polizaMadreId  String?
+  polizaMadre    PolizaMadre? @relation(fields: [polizaMadreId], references: [id], onDelete: SetNull)
   folio          String?      // folio de la aseguradora (capturado o extraído por IA)
   vigenciaInicio DateTime?
   vigenciaFin    DateTime?
   prima          Decimal?     @db.Decimal(14, 2)
-  // Cobranza: se capturan a mano (no hay API con la aseguradora). El importe por
-  // periodo = primaTotal / numeroPagos.
+  // Cobranza: se capturan a mano (no hay API con la aseguradora). El desglose por
+  // hija vive aquí; el total de la Madre es la suma de sus hijas.
   primaNeta        Decimal? @db.Decimal(14, 2)
+  financiamiento   Decimal? @db.Decimal(14, 2) // recargo/tasa de financiamiento por pago diferido
   gastosExpedicion Decimal? @db.Decimal(14, 2)
   iva              Decimal? @db.Decimal(14, 2)
   primaTotal       Decimal? @db.Decimal(14, 2)
@@ -392,6 +408,62 @@ model Poliza {
 
   @@index([clienteId])
   @@index([estado])
+  @@index([polizaMadreId])
+}
+
+// ───────────────────────── Póliza Madre (cobranza consolidada) ─────────────────────────
+// Concentra la cobranza de un cliente en una aseguradora. Agrupa sus pólizas
+// hijas/endosos y lleva el plan de pagos (periodicidad + parcialidades). El
+// importe que se cobra al cliente = total de la Madre (suma de sus hijas).
+model PolizaMadre {
+  id            String       @id @default(cuid())
+  clienteId     String
+  cliente       Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  aseguradoraId String
+  aseguradora   Aseguradora  @relation(fields: [aseguradoraId], references: [id])
+  periodicidad  Periodicidad @default(mensual)
+  numeroPagos   Int          @default(12) // derivado de la periodicidad (1|12|6|4)
+  fechaEmision  DateTime? // ancla del plan (primera emisión de una hija)
+  primeraFechaPago DateTime? // = fechaEmision + 10 días naturales
+  // Totales consolidados (suma de las hijas; se recalculan al capturar cobranza).
+  primaNeta        Decimal? @db.Decimal(14, 2)
+  financiamiento   Decimal? @db.Decimal(14, 2)
+  gastosExpedicion Decimal? @db.Decimal(14, 2)
+  iva              Decimal? @db.Decimal(14, 2)
+  primaTotal       Decimal? @db.Decimal(14, 2)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  hijas  Poliza[]
+  cortes CorteMadre[]
+
+  @@unique([clienteId, aseguradoraId])
+  @@index([clienteId])
+}
+
+// Una parcialidad del plan de pagos de la Madre. Reemplaza a Corte (por póliza)
+// como unidad de calendario de cobranza. El primer pago carga financiamiento +
+// gastos de expedición; los subsecuentes solo prima neta proporcional + IVA.
+model CorteMadre {
+  id               String         @id @default(cuid())
+  polizaMadreId    String
+  polizaMadre      PolizaMadre    @relation(fields: [polizaMadreId], references: [id], onDelete: Cascade)
+  numeroParcialidad Int           // 1..numeroPagos
+  periodo          String         // "2026-08"
+  fechaCorte       DateTime
+  fechaVencimiento DateTime       // fecha límite de pago de esta parcialidad
+  montoEsperado    Decimal?       @db.Decimal(14, 2)
+  esPrimerPago     Boolean        @default(false)
+  estado           EstadoCobranza @default(vigente)
+  pagadoEn         DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  pagos Pago[]
+
+  @@unique([polizaMadreId, numeroParcialidad])
+  @@index([estado])
+  @@index([fechaVencimiento])
 }
 
 // ───────────────────────── Cobranza recurrente ─────────────────────────
@@ -421,6 +493,9 @@ model Pago {
   poliza           Poliza     @relation(fields: [polizaId], references: [id])
   corteId          String?
   corte            Corte?     @relation(fields: [corteId], references: [id])
+  // Parcialidad de la Madre a la que se aplica (unidad de cobranza vigente).
+  corteMadreId     String?
+  corteMadre       CorteMadre? @relation(fields: [corteMadreId], references: [id])
   fecha            DateTime
   monto            Decimal    @db.Decimal(14, 2)
   forma            FormaPago  @default(transferencia)

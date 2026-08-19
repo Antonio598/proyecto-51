@@ -462,8 +462,8 @@ export class PortalService {
   /** Conciliación oportunista en segundo plano (mismo criterio que la ingesta de WhatsApp). */
   private async conciliarSiProcede(clienteId: string, documentoId: string) {
     try {
-      const cobrosAbiertos = await this.prisma.corte.count({
-        where: { estado: { not: EstadoCobranza.pagado }, poliza: { clienteId } },
+      const cobrosAbiertos = await this.prisma.corteMadre.count({
+        where: { estado: { not: EstadoCobranza.pagado }, polizaMadre: { clienteId } },
       });
       if (cobrosAbiertos === 0) return;
       await this.conciliacion.intentar(documentoId);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 
 const ESTADO_COBRANZA: Record<string, { label: string; clase: string }> = {
@@ -36,7 +37,8 @@ export default function CobranzaPage() {
       <div>
         <h1 className="text-xl font-semibold">Cobranza</h1>
         <p className="text-sm text-slate-500">
-          Cortes cada 30 días naturales. n8n actualiza los estados y envía recordatorios.
+          La cobranza se concentra por Póliza Madre (cliente + aseguradora). n8n actualiza los
+          estados y envía recordatorios.
         </p>
       </div>
 
@@ -95,37 +97,37 @@ export default function CobranzaPage() {
         </div>
       </section>
 
-      {/* Detalle por unidad */}
+      {/* Parcialidades abiertas por Póliza Madre */}
       <section className="space-y-2">
-        <h2 className="font-semibold">Detalle por unidad</h2>
+        <h2 className="font-semibold">Parcialidades por cobrar</h2>
         <div className="overflow-x-auto rounded-lg bg-white shadow">
           <table className="w-full text-sm">
             <thead className="bg-slate-100 text-left text-slate-600">
               <tr>
                 <th className="px-3 py-2">Cliente</th>
-                <th className="px-3 py-2">Unidad</th>
-                <th className="px-3 py-2">Póliza</th>
-                <th className="px-3 py-2">Periodo</th>
-                <th className="px-3 py-2">Próximo pago</th>
+                <th className="px-3 py-2">Aseguradora</th>
+                <th className="px-3 py-2">Parcialidad</th>
+                <th className="px-3 py-2">Vence</th>
                 <th className="px-3 py-2">Monto</th>
                 <th className="px-3 py-2">Estado</th>
+                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {cortes.map((c: any) => (
                 <tr key={c.id} className="border-t">
                   <td className="px-3 py-2">{c.cliente.razonSocial}</td>
+                  <td className="px-3 py-2">{c.aseguradora}</td>
                   <td className="px-3 py-2">
-                    {[c.unidad?.marca, c.unidad?.modelo].filter(Boolean).join(' ') || '—'}
-                    <div className="text-xs text-slate-400">{c.unidad?.vin}</div>
+                    {c.periodo} · parcialidad {c.numeroParcialidad}
+                    {c.esPrimerPago && (
+                      <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800">
+                        1er pago
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    {c.folio ?? 'pendiente'}
-                    <div className="text-xs text-slate-400">{c.aseguradora}</div>
-                  </td>
-                  <td className="px-3 py-2">{c.periodo}</td>
-                  <td className="px-3 py-2">
-                    {new Date(c.fechaProximoPago).toLocaleDateString('es-MX')}
+                    {new Date(c.fechaVencimiento).toLocaleDateString('es-MX')}
                   </td>
                   <td className="px-3 py-2">{mxn(c.montoEsperado)}</td>
                   <td className="px-3 py-2">
@@ -137,12 +139,20 @@ export default function CobranzaPage() {
                       {ESTADO_COBRANZA[c.estado]?.label ?? c.estado}
                     </span>
                   </td>
+                  <td className="px-3 py-2 text-right">
+                    <Link
+                      href={`/cobranza/madre/${c.madreId}`}
+                      className="rounded border px-3 py-1.5 text-xs"
+                    >
+                      Ver Madre
+                    </Link>
+                  </td>
                 </tr>
               ))}
               {cortes.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
-                    No hay cortes abiertos.
+                    No hay parcialidades abiertas.
                   </td>
                 </tr>
               )}

@@ -20,6 +20,7 @@ function mxn(v: unknown) {
 const COBRANZA_VACIA = {
   folio: '',
   primaNeta: '',
+  financiamiento: '',
   gastosExpedicion: '',
   iva: '',
   primaTotal: '',
@@ -50,6 +51,7 @@ export default function PolizaDetallePage() {
       setCobranza({
         folio: p.folio ?? '',
         primaNeta: p.primaNeta != null ? String(p.primaNeta) : '',
+        financiamiento: p.financiamiento != null ? String(p.financiamiento) : '',
         gastosExpedicion: p.gastosExpedicion != null ? String(p.gastosExpedicion) : '',
         iva: p.iva != null ? String(p.iva) : '',
         primaTotal: p.primaTotal != null ? String(p.primaTotal) : '',
@@ -63,7 +65,10 @@ export default function PolizaDetallePage() {
 
   const num = (v: string) => (v.trim() === '' ? undefined : Number(v.replace(/[,$\s]/g, '')));
   const totalSugerido =
-    (num(cobranza.primaNeta) ?? 0) + (num(cobranza.gastosExpedicion) ?? 0) + (num(cobranza.iva) ?? 0);
+    (num(cobranza.primaNeta) ?? 0) +
+    (num(cobranza.financiamiento) ?? 0) +
+    (num(cobranza.gastosExpedicion) ?? 0) +
+    (num(cobranza.iva) ?? 0);
   const totalEfectivo = num(cobranza.primaTotal) ?? totalSugerido;
   const pagos = num(cobranza.numeroPagos) ?? 0;
   const importePorPeriodo = totalEfectivo > 0 && pagos > 0 ? totalEfectivo / pagos : 0;
@@ -74,6 +79,7 @@ export default function PolizaDetallePage() {
         api.actualizarCobranzaPoliza(id, {
           folio: cobranza.folio || undefined,
           primaNeta: num(cobranza.primaNeta),
+          financiamiento: num(cobranza.financiamiento),
           gastosExpedicion: num(cobranza.gastosExpedicion),
           iva: num(cobranza.iva),
           primaTotal: num(cobranza.primaTotal) ?? (totalSugerido > 0 ? totalSugerido : undefined),
@@ -238,9 +244,18 @@ export default function PolizaDetallePage() {
           <div>
             <h2 className="font-semibold">Datos de cobranza</h2>
             <p className="text-sm text-slate-500">
-              Como no hay conexión con la aseguradora, captura aquí los importes del recibo. El
-              sistema calcula el importe por periodo y lo usa en la cobranza y el desglose.
+              Como no hay conexión con la aseguradora, captura aquí los importes del recibo. Este
+              desglose se suma al total de la Póliza Madre, que concentra la cobranza y el plan de
+              pagos (primer pago vs. subsecuentes).
             </p>
+            {poliza.polizaMadreId && (
+              <Link
+                href={`/cobranza/madre/${poliza.polizaMadreId}`}
+                className="mt-1 inline-block text-sm text-marca"
+              >
+                Ver Póliza Madre y plan de pagos →
+              </Link>
+            )}
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -265,6 +280,15 @@ export default function PolizaDetallePage() {
                 inputMode="decimal"
                 value={cobranza.primaNeta}
                 onChange={(e) => setCobranza({ ...cobranza, primaNeta: e.target.value })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Financiamiento</label>
+              <input
+                inputMode="decimal"
+                value={cobranza.financiamiento}
+                onChange={(e) => setCobranza({ ...cobranza, financiamiento: e.target.value })}
                 className="input"
               />
             </div>
@@ -317,58 +341,59 @@ export default function PolizaDetallePage() {
             </button>
             {importePorPeriodo > 0 && (
               <span className="text-sm text-slate-600">
-                Importe por periodo: <strong className="text-marca">{mxn(importePorPeriodo)}</strong>
+                Importe por periodo (promedio):{' '}
+                <strong className="text-marca">{mxn(importePorPeriodo)}</strong>
               </span>
             )}
           </div>
         </section>
       )}
 
-      {/* Cortes de cobranza */}
+      {/* Cobranza: ahora vive en la Póliza Madre */}
       <section className="space-y-2">
-        <h2 className="font-semibold">Cortes de cobranza</h2>
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-100 text-left text-slate-600">
-              <tr>
-                <th className="px-4 py-2">Periodo</th>
-                <th className="px-4 py-2">Corte</th>
-                <th className="px-4 py-2">Próximo pago</th>
-                <th className="px-4 py-2">Monto</th>
-                <th className="px-4 py-2">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {poliza.cortes.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-4 text-center text-slate-400">
-                    Se abrirá el primer corte al marcar la póliza como emitida.
-                  </td>
-                </tr>
-              )}
-              {poliza.cortes.map((c: any) => (
-                <tr key={c.id} className="border-t">
-                  <td className="px-4 py-2">{c.periodo}</td>
-                  <td className="px-4 py-2">
-                    {new Date(c.fechaCorte).toLocaleDateString('es-MX')}
-                  </td>
-                  <td className="px-4 py-2">
-                    {new Date(c.fechaProximoPago).toLocaleDateString('es-MX')}
-                  </td>
-                  <td className="px-4 py-2">{mxn(c.montoEsperado)}</td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs ${
-                        ESTADO_COBRANZA[c.estado]?.clase ?? ''
-                      }`}
-                    >
-                      {ESTADO_COBRANZA[c.estado]?.label ?? c.estado}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <h2 className="font-semibold">Cobranza</h2>
+        <div className="rounded-lg bg-white p-4 text-sm text-slate-600 shadow">
+          El plan de pagos (parcialidades, fechas límite y estado) se concentra en la Póliza Madre
+          de este cliente y aseguradora.
+          {poliza.polizaMadreId ? (
+            <>
+              {' '}
+              <Link href={`/cobranza/madre/${poliza.polizaMadreId}`} className="text-marca">
+                Ver plan de pagos de la Póliza Madre →
+              </Link>
+            </>
+          ) : (
+            ' Se creará al marcar la póliza como emitida.'
+          )}
+          {poliza.cortes.length > 0 && (
+            <div className="mt-3">
+              <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">
+                Cortes anteriores (modelo previo)
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {poliza.cortes.map((c: any) => (
+                    <tr key={c.id} className="border-t">
+                      <td className="px-2 py-1.5">{c.periodo}</td>
+                      <td className="px-2 py-1.5">
+                        {new Date(c.fechaProximoPago).toLocaleDateString('es-MX')}
+                      </td>
+                      <td className="px-2 py-1.5">{mxn(c.montoEsperado)}</td>
+                      <td className="px-2 py-1.5">
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs ${
+                            ESTADO_COBRANZA[c.estado]?.clase ?? ''
+                          }`}
+                        >
+                          {ESTADO_COBRANZA[c.estado]?.label ?? c.estado}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
 

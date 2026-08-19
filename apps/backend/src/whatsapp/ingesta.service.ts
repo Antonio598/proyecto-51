@@ -109,10 +109,10 @@ export class IngestaService {
    */
   private async conciliarSiProcede(clienteId: string, documentoId: string) {
     try {
-      const cobrosAbiertos = await this.prisma.corte.count({
+      const cobrosAbiertos = await this.prisma.corteMadre.count({
         where: {
           estado: { not: EstadoCobranza.pagado },
-          poliza: { clienteId },
+          polizaMadre: { clienteId },
         },
       });
       if (cobrosAbiertos === 0) return;

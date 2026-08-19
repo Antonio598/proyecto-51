@@ -53,6 +53,12 @@ export class ActualizarCobranzaDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
+  financiamiento?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   gastosExpedicion?: number;
 
   @IsOptional()

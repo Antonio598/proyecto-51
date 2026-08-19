@@ -463,6 +463,15 @@ export const api = {
       body: JSON.stringify({ documentoId }),
     }),
 
+  // ── Pólizas Madre ──
+  listarMadres: (clienteId?: string) =>
+    request<any[]>(`/cobranza/madres${clienteId ? `?clienteId=${clienteId}` : ''}`),
+  detalleMadre: (id: string) => request<any>(`/cobranza/madres/${id}`),
+  configurarPlanMadre: (id: string, data: Record<string, unknown>) =>
+    request<any>(`/cobranza/madres/${id}/plan`, { method: 'PATCH', body: JSON.stringify(data) }),
+  marcarPagadoMadre: (id: string) =>
+    request<any>(`/cobranza/madres/${id}/pagar`, { method: 'POST' }),
+
   // ── Pagos y conciliación ──
   comprobantesPendientes: () => request<any[]>('/pagos/comprobantes'),
   detalleComprobante: (documentoId: string) => request<any>(`/pagos/comprobantes/${documentoId}`),

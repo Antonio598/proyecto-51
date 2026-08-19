@@ -47,7 +47,7 @@ export default function PagosPage() {
     try {
       const lectura = detalle.lectura ?? {};
       await api.registrarPago({
-        corteId: candidato.corteId,
+        corteMadreId: candidato.corteId,
         documentoId: detalle.documento.id,
         monto: lectura.monto ?? candidato.montoEsperado,
         fecha: lectura.fecha ?? new Date().toISOString(),
@@ -246,7 +246,11 @@ export default function PagosPage() {
                     {p.poliza.folio ?? 'pendiente'}
                     <div className="text-xs text-slate-400">{p.poliza.aseguradora.nombre}</div>
                   </td>
-                  <td className="px-4 py-2">{p.corte?.periodo ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    {p.corteMadre
+                      ? `${p.corteMadre.periodo} · parc. ${p.corteMadre.numeroParcialidad}`
+                      : '—'}
+                  </td>
                   <td className="px-4 py-2">{mxn(p.monto)}</td>
                   <td className="px-4 py-2 text-right">
                     <button
