@@ -203,7 +203,10 @@ export class PolizasMadreService {
           orderBy: { createdAt: 'asc' },
           include: { unidad: { select: { vin: true, marca: true, modelo: true } } },
         },
-        cortes: { orderBy: { numeroParcialidad: 'asc' }, include: { pagos: true } },
+        cortes: {
+          orderBy: { numeroParcialidad: 'asc' },
+          include: { pagos: true, recordatorios: { orderBy: { enviadoEn: 'desc' } } },
+        },
       },
     });
     if (!madre) throw new NotFoundException('Póliza Madre no encontrada');

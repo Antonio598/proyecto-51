@@ -31,7 +31,9 @@ export class ExpedientesService {
     const expediente = await this.prisma.expediente.findUnique({
       where: { id },
       include: {
-        cliente: { select: { id: true, razonSocial: true, whatsappNumber: true } },
+        cliente: {
+          select: { id: true, razonSocial: true, whatsappNumber: true, contactoEmail: true },
+        },
         propuestasAseguradora: {
           include: { aseguradora: true },
           orderBy: { createdAt: 'asc' },

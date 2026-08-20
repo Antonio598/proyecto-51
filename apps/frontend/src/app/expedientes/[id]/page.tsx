@@ -444,17 +444,15 @@ export default function ExpedienteDetallePage() {
                 </button>
                 <button
                   onClick={() =>
-                    accion(() => api.enviarPropuestaCliente(id), 'Propuesta enviada por WhatsApp.')
+                    accion(() => api.enviarPropuestaCliente(id), 'Propuesta enviada por correo.')
                   }
-                  disabled={ocupado || !exp.cliente.whatsappNumber}
+                  disabled={ocupado || !exp.cliente.contactoEmail}
                   title={
-                    exp.cliente.whatsappNumber
-                      ? ''
-                      : 'El cliente no tiene WhatsApp registrado'
+                    exp.cliente.contactoEmail ? '' : 'El cliente no tiene correo registrado'
                   }
                   className="rounded bg-green-700 px-4 py-2 text-sm text-white disabled:opacity-50"
                 >
-                  Enviar por WhatsApp
+                  Enviar por correo
                 </button>
               </>
             )}

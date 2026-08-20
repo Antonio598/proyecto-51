@@ -1,14 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EstadoCobranza } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { PolizasMadreService } from './polizas-madre.service';
+import { RecordatoriosService } from './recordatorios.service';
 import { sumarDiasNaturales } from './plan-pagos';
 
 /** Días de anticipación con los que una parcialidad se marca "por vencer". */
 const DIAS_AVISO = 5;
-
-type CorteMadreConCliente = Awaited<ReturnType<CobranzaService['cargarCortesAbiertos']>>[number];
 
 @Injectable()
 export class CobranzaService {
@@ -16,8 +14,8 @@ export class CobranzaService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly whatsapp: WhatsappService,
     private readonly polizasMadre: PolizasMadreService,
+    private readonly recordatorios: RecordatoriosService,
   ) {}
 
   private cargarCortesAbiertos() {
@@ -47,7 +45,6 @@ export class CobranzaService {
 
     let vencidos = 0;
     let porVencer = 0;
-    const recordatorios: { cliente: string; enviado: boolean; motivo?: string }[] = [];
 
     // 1. Recalcular el estado de cada parcialidad abierta.
     for (const corte of cortes) {
@@ -65,45 +62,10 @@ export class CobranzaService {
       corte.estado = nuevo;
     }
 
-    // 2. Un recordatorio por cliente (no uno por Madre) para no saturarlo.
-    if (opciones.enviarRecordatorios !== false) {
-      const porCliente = new Map<string, CorteMadreConCliente[]>();
-      for (const corte of cortes) {
-        if (corte.estado === EstadoCobranza.vigente) continue;
-        const key = corte.polizaMadre.clienteId;
-        const lista = porCliente.get(key) ?? [];
-        lista.push(corte);
-        porCliente.set(key, lista);
-      }
-
-      for (const [, lista] of porCliente) {
-        const cliente = lista[0].polizaMadre.cliente;
-        if (!cliente.whatsappNumber) {
-          recordatorios.push({
-            cliente: cliente.razonSocial,
-            enviado: false,
-            motivo: 'sin WhatsApp registrado',
-          });
-          continue;
-        }
-        try {
-          await this.whatsapp.enviarTexto(
-            cliente.whatsappNumber,
-            this.textoRecordatorio(cliente.razonSocial, lista),
-          );
-          recordatorios.push({ cliente: cliente.razonSocial, enviado: true });
-        } catch (err) {
-          this.logger.error(
-            `Recordatorio fallido para ${cliente.razonSocial}: ${(err as Error).message}`,
-          );
-          recordatorios.push({
-            cliente: cliente.razonSocial,
-            enviado: false,
-            motivo: 'error de envío',
-          });
-        }
-      }
-    }
+    // 2. Recordatorios por correo, según el calendario (20/15/10 y luego cada 3
+    //    días), con historial e idempotencia. Se detienen solos al pagar.
+    const recordatorios =
+      opciones.enviarRecordatorios !== false ? await this.recordatorios.procesar() : null;
 
     this.logger.log(
       `Ciclo de cobranza: ${cortes.length} parcialidades revisadas, ${vencidos} vencidas, ${porVencer} por vencer`,
@@ -213,33 +175,5 @@ export class CobranzaService {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
-  }
-
-  private textoRecordatorio(
-    razonSocial: string,
-    cortes: { estado: EstadoCobranza; fechaVencimiento: Date; montoEsperado: unknown }[],
-  ): string {
-    const vencidos = cortes.filter((c) => c.estado === EstadoCobranza.vencido);
-    const total = cortes.reduce((s, c) => s + (c.montoEsperado ? Number(c.montoEsperado) : 0), 0);
-    const monto = total.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
-    const fecha = cortes
-      .map((c) => c.fechaVencimiento)
-      .sort((a, b) => a.getTime() - b.getTime())[0]
-      .toLocaleDateString('es-MX');
-
-    if (vencidos.length > 0) {
-      return (
-        `Estimado cliente de ${razonSocial}:\n\n` +
-        `Le recordamos que tiene ${vencidos.length} pago(s) vencido(s) por un total de ${monto}. ` +
-        `La fecha de pago era el ${fecha}.\n\n` +
-        `Puede realizar el pago directamente con la aseguradora y enviarnos el comprobante por este medio. ` +
-        `Nosotros nos encargamos de aplicarlo.`
-      );
-    }
-    return (
-      `Estimado cliente de ${razonSocial}:\n\n` +
-      `Le recordamos que su próximo pago de ${monto} vence el ${fecha}.\n\n` +
-      `Puede realizar el pago directamente con la aseguradora y enviarnos el comprobante por este medio.`
-    );
   }
 }

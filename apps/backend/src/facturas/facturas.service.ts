@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { OrigenDocumento, TipoDocumento } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { CorreoService, plantillaCorreo } from '../correo/correo.service';
 import { AuditService } from '../audit/audit.service';
 
 /** Los dos únicos tipos de documento que maneja este módulo. */
@@ -11,7 +11,7 @@ export type TipoFactura = 'factura' | 'complemento';
 /**
  * Módulo 11 — Facturas y complementos de pago.
  * Se descargan del portal de la aseguradora (manual, no hay API), se suben aquí
- * y el envío al cliente por WhatsApp es automático.
+ * y el envío al cliente por correo es automático.
  */
 @Injectable()
 export class FacturasService {
@@ -20,7 +20,7 @@ export class FacturasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
-    private readonly whatsapp: WhatsappService,
+    private readonly correo: CorreoService,
     private readonly audit: AuditService,
   ) {}
 
@@ -77,7 +77,7 @@ export class FacturasService {
     return { factura, documento };
   }
 
-  /** Envía la factura o complemento al cliente por WhatsApp. */
+  /** Envía la factura o complemento al cliente por correo. */
   async enviar(facturaId: string, actorUserId: string) {
     const factura = await this.prisma.factura.findUnique({
       where: { id: facturaId },
@@ -89,8 +89,8 @@ export class FacturasService {
     }
 
     const cliente = factura.poliza.cliente;
-    if (!cliente.whatsappNumber) {
-      throw new BadRequestException('El cliente no tiene número de WhatsApp registrado');
+    if (!cliente.contactoEmail) {
+      throw new BadRequestException('El cliente no tiene correo registrado');
     }
 
     const documento = await this.prisma.documento.findUnique({
@@ -101,12 +101,27 @@ export class FacturasService {
     const contenido = await this.storage.descargar(documento.storageKey);
     const etiqueta = factura.tipo === TipoDocumento.complemento ? 'complemento de pago' : 'factura';
 
-    await this.whatsapp.enviarDocumento(
-      cliente.whatsappNumber,
-      contenido,
-      documento.nombreOriginal ?? `${etiqueta}.pdf`,
-      `Adjuntamos su ${etiqueta} correspondiente a la póliza ${factura.poliza.folio ?? ''}.`.trim(),
+    const html = plantillaCorreo(
+      etiqueta === 'factura' ? 'Su factura' : 'Su complemento de pago',
+      `<p>Estimado cliente de ${cliente.razonSocial}:</p>
+       <p>Adjuntamos su ${etiqueta}${
+         factura.poliza.folio ? ` correspondiente a la póliza ${factura.poliza.folio}` : ''
+       }.</p>
+       <p>Quedamos a sus órdenes.</p>`,
     );
+
+    await this.correo.enviar({
+      para: cliente.contactoEmail,
+      asunto: `Su ${etiqueta} — ${cliente.razonSocial}`,
+      html,
+      adjuntos: [
+        {
+          nombre: documento.nombreOriginal ?? `${etiqueta}.pdf`,
+          contenido,
+          tipo: documento.mime ?? 'application/pdf',
+        },
+      ],
+    });
 
     const actualizada = await this.prisma.factura.update({
       where: { id: facturaId },
@@ -116,12 +131,12 @@ export class FacturasService {
     await this.audit.registrar({
       entidad: 'Factura',
       entidadId: facturaId,
-      accion: 'enviar_whatsapp',
+      accion: 'enviar_correo',
       actorUserId,
-      diff: { numero: cliente.whatsappNumber },
+      diff: { correo: cliente.contactoEmail },
     });
 
-    this.logger.log(`${etiqueta} ${facturaId} enviada a ${cliente.whatsappNumber}`);
+    this.logger.log(`${etiqueta} ${facturaId} enviada a ${cliente.contactoEmail}`);
     return actualizada;
   }
 }

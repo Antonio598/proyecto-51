@@ -445,14 +445,14 @@ export default function ClienteDetallePage() {
                   try {
                     await api.enviarDesglose(id, desglose.documento.id);
                     setDesglose(null);
-                    alert('Desglose y pólizas enviados por WhatsApp.');
+                    alert('Desglose y pólizas enviados por correo.');
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Error al enviar');
                   }
                 }}
                 className="btn-success"
               >
-                Enviar por WhatsApp
+                Enviar por correo
               </button>
             </>
           )}

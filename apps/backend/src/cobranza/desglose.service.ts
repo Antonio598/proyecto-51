@@ -3,7 +3,7 @@ import { EstadoPoliza, OrigenDocumento, TipoDocumento } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { ExcelService } from '../generacion/excel.service';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { CorreoService, plantillaCorreo } from '../correo/correo.service';
 import { AuditService } from '../audit/audit.service';
 
 /**
@@ -19,7 +19,7 @@ export class DesgloseService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly excel: ExcelService,
-    private readonly whatsapp: WhatsappService,
+    private readonly correo: CorreoService,
     private readonly audit: AuditService,
   ) {}
 
@@ -130,8 +130,8 @@ export class DesgloseService {
   }
 
   /**
-   * Envía al cliente el desglose junto con los PDF de sus pólizas emitidas.
-   * Este envío es el que queda como documento base de cobranza del periodo.
+   * Envía al cliente por correo el desglose junto con los PDF de sus pólizas
+   * emitidas. Es el documento base de cobranza del periodo.
    */
   async enviar(clienteId: string, documentoId: string, actorUserId: string) {
     const cliente = await this.prisma.cliente.findUnique({
@@ -142,43 +142,58 @@ export class DesgloseService {
         },
       },
     });
-    if (!cliente?.whatsappNumber) {
-      throw new BadRequestException('El cliente no tiene número de WhatsApp registrado');
+    if (!cliente?.contactoEmail) {
+      throw new BadRequestException('El cliente no tiene correo registrado');
     }
 
     const desglose = await this.prisma.documento.findUnique({ where: { id: documentoId } });
     if (!desglose) throw new BadRequestException('Desglose no encontrado');
 
-    // 1. El desglose.
+    // Adjuntos: el desglose (Excel) + las pólizas emitidas que ya tengan PDF.
+    const adjuntos: { nombre: string; contenido: Buffer; tipo?: string }[] = [];
     const contenido = await this.storage.descargar(desglose.storageKey);
-    await this.whatsapp.enviarDocumento(
-      cliente.whatsappNumber,
+    adjuntos.push({
+      nombre: desglose.nombreOriginal ?? 'desglose.xlsx',
       contenido,
-      desglose.nombreOriginal ?? 'desglose.xlsx',
-      'Adjuntamos el desglose de costos por unidad correspondiente al periodo.',
-    );
+      tipo: desglose.mime ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
 
-    // 2. Las pólizas emitidas que ya tengan PDF.
     const pdfIds = cliente.polizas.map((p) => p.pdfDocId!).filter(Boolean);
     const pdfs = await this.prisma.documento.findMany({ where: { id: { in: pdfIds } } });
     for (const pdf of pdfs) {
       const bin = await this.storage.descargar(pdf.storageKey);
-      await this.whatsapp.enviarDocumento(
-        cliente.whatsappNumber,
-        bin,
-        pdf.nombreOriginal ?? 'poliza.pdf',
-      );
+      adjuntos.push({
+        nombre: pdf.nombreOriginal ?? 'poliza.pdf',
+        contenido: bin,
+        tipo: pdf.mime ?? 'application/pdf',
+      });
     }
+
+    const html = plantillaCorreo(
+      'Desglose de cobranza',
+      `<p>Estimado cliente de ${cliente.razonSocial}:</p>
+       <p>Adjuntamos el desglose de costos por unidad correspondiente al periodo${
+         pdfs.length ? `, junto con ${pdfs.length} póliza(s) en PDF` : ''
+       }.</p>
+       <p>Quedamos a sus órdenes.</p>`,
+    );
+
+    await this.correo.enviar({
+      para: cliente.contactoEmail,
+      asunto: `Desglose de cobranza — ${cliente.razonSocial}`,
+      html,
+      adjuntos,
+    });
 
     await this.audit.registrar({
       entidad: 'Documento',
       entidadId: documentoId,
       accion: 'enviar_desglose',
       actorUserId,
-      diff: { numero: cliente.whatsappNumber, polizasAdjuntas: pdfs.length },
+      diff: { correo: cliente.contactoEmail, polizasAdjuntas: pdfs.length },
     });
 
-    this.logger.log(`Desglose enviado a ${cliente.whatsappNumber} con ${pdfs.length} póliza(s)`);
+    this.logger.log(`Desglose enviado a ${cliente.contactoEmail} con ${pdfs.length} póliza(s)`);
     return { enviado: true, polizasAdjuntas: pdfs.length };
   }
 }

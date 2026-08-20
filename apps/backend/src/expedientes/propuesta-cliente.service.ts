@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { PdfService } from '../generacion/pdf.service';
 import { ClaudeService } from '../ia/claude.service';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { CorreoService, plantillaCorreo } from '../correo/correo.service';
 import { AuditService } from '../audit/audit.service';
 import {
   Coberturas,
@@ -36,7 +36,7 @@ export class PropuestaClienteService {
     private readonly storage: StorageService,
     private readonly pdf: PdfService,
     private readonly claude: ClaudeService,
-    private readonly whatsapp: WhatsappService,
+    private readonly correo: CorreoService,
     private readonly audit: AuditService,
   ) {}
 
@@ -166,7 +166,7 @@ export class PropuestaClienteService {
     return propuesta;
   }
 
-  /** Envía la propuesta al cliente por WhatsApp y marca el expediente como enviado. */
+  /** Envía la propuesta al cliente por correo y marca el expediente como enviado. */
   async enviar(expedienteId: string, actorUserId: string) {
     const expediente = await this.cargar(expedienteId);
     const propuesta = expediente.propuestaCliente;
@@ -174,9 +174,9 @@ export class PropuestaClienteService {
     if (!propuesta?.pdfDocId) {
       throw new BadRequestException('Genera la propuesta antes de enviarla');
     }
-    if (!expediente.cliente.whatsappNumber) {
+    if (!expediente.cliente.contactoEmail) {
       throw new BadRequestException(
-        'El cliente no tiene número de WhatsApp registrado; agrégalo en su ficha',
+        'El cliente no tiene correo registrado; agrégalo en su ficha',
       );
     }
 
@@ -187,12 +187,24 @@ export class PropuestaClienteService {
 
     const contenido = await this.storage.descargar(documento.storageKey);
 
-    await this.whatsapp.enviarDocumento(
-      expediente.cliente.whatsappNumber,
-      contenido,
-      documento.nombreOriginal ?? 'propuesta.pdf',
-      `Hola, adjuntamos la propuesta de seguro para su flota. Quedamos atentos a sus comentarios.`,
+    const html = plantillaCorreo(
+      'Propuesta de seguro',
+      `<p>Estimado cliente de ${expediente.cliente.razonSocial}:</p>
+       <p>Adjuntamos la propuesta de seguro para su flota. Quedamos atentos a sus comentarios.</p>`,
     );
+
+    await this.correo.enviar({
+      para: expediente.cliente.contactoEmail,
+      asunto: `Propuesta de seguro — ${expediente.cliente.razonSocial}`,
+      html,
+      adjuntos: [
+        {
+          nombre: documento.nombreOriginal ?? 'propuesta.pdf',
+          contenido,
+          tipo: documento.mime ?? 'application/pdf',
+        },
+      ],
+    });
 
     await this.prisma.$transaction([
       this.prisma.propuestaCliente.update({
@@ -208,15 +220,15 @@ export class PropuestaClienteService {
     await this.audit.registrar({
       entidad: 'PropuestaCliente',
       entidadId: propuesta.id,
-      accion: 'enviar_whatsapp',
+      accion: 'enviar_correo',
       actorUserId,
-      diff: { numero: expediente.cliente.whatsappNumber },
+      diff: { correo: expediente.cliente.contactoEmail },
     });
 
     this.logger.log(
-      `Propuesta del expediente ${expediente.folioInterno} enviada a ${expediente.cliente.whatsappNumber}`,
+      `Propuesta del expediente ${expediente.folioInterno} enviada a ${expediente.cliente.contactoEmail}`,
     );
-    return { enviada: true, numero: expediente.cliente.whatsappNumber };
+    return { enviada: true, correo: expediente.cliente.contactoEmail };
   }
 
   // ── Utilidades internas ──

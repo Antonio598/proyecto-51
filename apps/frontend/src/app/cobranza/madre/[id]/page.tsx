@@ -250,6 +250,47 @@ export default function MadreDetallePage() {
         </div>
       </section>
 
+      {/* Historial de recordatorios enviados */}
+      {(() => {
+        const recordatorios = (madre.cortes ?? [])
+          .flatMap((c: any) =>
+            (c.recordatorios ?? []).map((r: any) => ({ ...r, parcialidad: c.numeroParcialidad })),
+          )
+          .sort((a: any, b: any) => new Date(b.enviadoEn).getTime() - new Date(a.enviadoEn).getTime());
+        if (recordatorios.length === 0) return null;
+        return (
+          <section className="space-y-2">
+            <h2 className="font-semibold">Recordatorios enviados</h2>
+            <div className="overflow-x-auto rounded-lg bg-white shadow">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-100 text-left text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Fecha</th>
+                    <th className="px-3 py-2">Parcialidad</th>
+                    <th className="px-3 py-2">Canal</th>
+                    <th className="px-3 py-2">Destino</th>
+                    <th className="px-3 py-2">Asunto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recordatorios.map((r: any) => (
+                    <tr key={r.id} className="border-t">
+                      <td className="px-3 py-2">
+                        {new Date(r.enviadoEn).toLocaleString('es-MX')}
+                      </td>
+                      <td className="px-3 py-2">#{r.parcialidad}</td>
+                      <td className="px-3 py-2 capitalize">{r.canal}</td>
+                      <td className="px-3 py-2">{r.destino ?? '—'}</td>
+                      <td className="px-3 py-2 text-slate-600">{r.asunto ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })()}
+
       {/* Desglose por hija */}
       <section className="space-y-2">
         <h2 className="font-semibold">Desglose por póliza hija</h2>

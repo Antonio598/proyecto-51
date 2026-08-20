@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './audit/audit.module';
 import { StorageModule } from './storage/storage.module';
+import { CorreoModule } from './correo/correo.module';
 import { IaModule } from './ia/ia.module';
 import { GeneracionModule } from './generacion/generacion.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
@@ -33,6 +34,7 @@ import { RolesGuard } from './auth/roles.guard';
     PrismaModule,
     AuditModule,
     StorageModule,
+    CorreoModule,
     IaModule,
     GeneracionModule,
     NotificacionesModule,

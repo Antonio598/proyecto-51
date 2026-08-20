@@ -459,11 +459,30 @@ model CorteMadre {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  pagos Pago[]
+  pagos         Pago[]
+  recordatorios RecordatorioCobranza[]
 
   @@unique([polizaMadreId, numeroParcialidad])
   @@index([estado])
   @@index([fechaVencimiento])
+}
+
+// Historial de recordatorios de cobranza enviados por correo. La `clave`
+// (p. ej. "d20", "d15", "c3:2") identifica el hito/cadencia y hace idempotente
+// el envío: el cron no repite un recordatorio ya mandado para esa parcialidad.
+model RecordatorioCobranza {
+  id            String     @id @default(cuid())
+  corteMadreId  String
+  corteMadre    CorteMadre @relation(fields: [corteMadreId], references: [id], onDelete: Cascade)
+  clave         String
+  canal         String     @default("correo")
+  destino       String?
+  asunto        String?
+  diasRestantes Int?
+  enviadoEn     DateTime   @default(now())
+
+  @@unique([corteMadreId, clave])
+  @@index([corteMadreId])
 }
 
 // ───────────────────────── Cobranza recurrente ─────────────────────────

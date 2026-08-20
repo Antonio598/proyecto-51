@@ -441,8 +441,8 @@ export default function PolizaDetallePage() {
       <section className="space-y-3 rounded-lg bg-white p-4 shadow">
         <h2 className="font-semibold">Facturas y complementos de pago</h2>
         <p className="text-sm text-slate-500">
-          Descárgalos del portal de la aseguradora y súbelos aquí. El envío al cliente por
-          WhatsApp es automático.
+          Descárgalos del portal de la aseguradora y súbelos aquí. El envío al cliente por correo
+          es automático.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -485,11 +485,11 @@ export default function PolizaDetallePage() {
                 )}
               </div>
               <button
-                onClick={() => accion(() => api.enviarFactura(f.id), 'Enviada por WhatsApp.')}
+                onClick={() => accion(() => api.enviarFactura(f.id), 'Enviada por correo.')}
                 disabled={ocupado}
                 className="rounded bg-green-700 px-3 py-1.5 text-xs text-white disabled:opacity-50"
               >
-                {f.enviadoAlClienteEn ? 'Reenviar' : 'Enviar por WhatsApp'}
+                {f.enviadoAlClienteEn ? 'Reenviar' : 'Enviar por correo'}
               </button>
             </li>
           ))}

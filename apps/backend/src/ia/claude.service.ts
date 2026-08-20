@@ -514,6 +514,67 @@ Reglas estrictas:
     return this.parsearJson(respuesta);
   }
 
+  /**
+   * Redacta el texto (adaptativo) de un correo de cobranza. Sólo el copy: el
+   * total y el desglose los inserta el sistema en el HTML, para que el modelo no
+   * invente cifras. El tono se adapta a los días restantes y a si ya hubo
+   * recordatorios previos.
+   */
+  async redactarCorreoCobranza(contexto: {
+    cliente: string;
+    aseguradora: string;
+    totalFormateado: string;
+    diasRestantes: number;
+    vencido: boolean;
+    numeroParcialidad: number;
+    esPrimerPago: boolean;
+    periodicidad: string;
+    recordatoriosPrevios: number;
+    fechaLimite: string;
+  }): Promise<{ asunto: string; saludo: string; cuerpo: string; cierre: string }> {
+    const respuesta = await this.client.messages.create({
+      model: this.modelo,
+      max_tokens: 1500,
+      system: `Redactas correos de cobranza para un despacho mexicano de seguros de flotas de transporte de carga, dirigidos al dueño o gerente de la flota.
+
+Escribe en español de México, tono profesional, cordial y directo. El objetivo es recordar un pago próximo o vencido de forma respetuosa.
+
+Reglas estrictas:
+- NO inventes ni escribas cifras, montos, fechas exactas ni números de póliza: el sistema los inserta aparte en el correo. Refiérete al importe como "el total indicado" o "el importe de esta parcialidad".
+- Adapta la urgencia: si faltan muchos días es un recordatorio amable; si faltan pocos, más puntual; si está vencido, firme pero cortés.
+- Si ya hubo recordatorios previos, reconócelo con tacto (p. ej. "reiteramos") sin sonar molesto.
+- Nada de lenguaje agresivo ni amenazas.
+- "asunto": línea de asunto breve (máx. 70 caracteres), sin cifras.
+- "saludo": una línea de saludo (p. ej. "Estimado cliente de <nombre>:").
+- "cuerpo": 2 o 3 frases. Menciona que puede pagar directo con la aseguradora y enviarnos el comprobante por este medio para aplicarlo.
+- "cierre": una frase de cierre y agradecimiento.`,
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              asunto: { type: 'string' },
+              saludo: { type: 'string' },
+              cuerpo: { type: 'string' },
+              cierre: { type: 'string' },
+            },
+            required: ['asunto', 'saludo', 'cuerpo', 'cierre'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: `Redacta el correo de cobranza con este contexto:\n${JSON.stringify(contexto, null, 2)}`,
+        },
+      ],
+    });
+
+    return this.parsearJson(respuesta);
+  }
+
   // ── Utilidades internas ──
 
   /**
