@@ -332,7 +332,7 @@ function FormularioEnvio() {
 // ───────────────────────── Mi información ─────────────────────────
 
 function ConsultaCuenta() {
-  const [telefono, setTelefono] = useState('');
+  const [rfc, setRfc] = useState('');
   const [email, setEmail] = useState('');
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
@@ -343,7 +343,7 @@ function ConsultaCuenta() {
     setError('');
     setCargando(true);
     try {
-      setCuenta(await consultarPortal({ telefono, email }));
+      setCuenta(await consultarPortal({ rfc, email }));
     } catch (err) {
       setCuenta(null);
       setError(err instanceof Error ? err.message : 'No se pudo consultar.');
@@ -361,7 +361,8 @@ function ConsultaCuenta() {
             <div>
               <h2 className="text-lg font-semibold text-slate-800">{cuenta.cliente.razonSocial}</h2>
               <p className="mt-0.5 text-sm text-slate-500">
-                {cuenta.cliente.telefono} · {cuenta.cliente.contactoEmail}
+                {cuenta.cliente.rfc ? `${cuenta.cliente.rfc} · ` : ''}
+                {cuenta.cliente.contactoEmail}
               </p>
             </div>
             <button onClick={() => setCuenta(null)} className="text-sm text-marca hover:underline">
@@ -395,9 +396,11 @@ function ConsultaCuenta() {
                   className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2.5"
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-slate-700">{c.unidad}</div>
+                    <div className="truncate text-sm font-medium text-slate-700">
+                      {c.aseguradora}
+                    </div>
                     <div className="text-xs text-slate-500">
-                      {c.aseguradora} · vence {fecha(c.fechaProximoPago)}
+                      Parcialidad {c.numeroParcialidad} · vence {fecha(c.fechaVencimiento)}
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1">
@@ -554,20 +557,18 @@ function ConsultaCuenta() {
   return (
     <form onSubmit={consultar} className="space-y-4 rounded-2xl bg-white p-6 shadow-tarjeta">
       <p className="text-sm text-slate-600">
-        Ingresa el teléfono y correo que registraste con el despacho para ver tu flota, pólizas y
+        Ingresa tu RFC y el correo que registraste con el despacho para ver tu flota, pólizas y
         pagos pendientes.
       </p>
       {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       <div>
-        <label className="label">Teléfono</label>
+        <label className="label">RFC</label>
         <input
-          type="tel"
-          inputMode="tel"
-          value={telefono}
-          onChange={(e) => setTelefono(e.target.value)}
-          placeholder="Ej. 55 1234 5678"
-          className="input"
+          value={rfc}
+          onChange={(e) => setRfc(e.target.value.toUpperCase())}
+          placeholder="Ej. XAXX010101000"
+          className="input uppercase"
           required
         />
       </div>

@@ -35,7 +35,10 @@ const NAV: { href: string; label: string; icono: string }[] = [
   { href: '/documentos', label: 'Documentos por procesar', icono: 'documentos' },
   { href: '/expedientes', label: 'Expedientes', icono: 'expedientes' },
   { href: '/polizas', label: 'Pólizas', icono: 'polizas' },
+  { href: '/endosos', label: 'Endosos (altas/bajas)', icono: 'documentos' },
+  { href: '/consulta', label: 'Consulta de vigencia', icono: 'polizas' },
   { href: '/cobranza', label: 'Cobranza', icono: 'cobranza' },
+  { href: '/facturas', label: 'Facturas', icono: 'pagos' },
   { href: '/pagos', label: 'Pagos', icono: 'pagos' },
   { href: '/usuarios', label: 'Usuarios', icono: 'usuarios' },
 ];

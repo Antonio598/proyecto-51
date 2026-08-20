@@ -309,25 +309,44 @@ export default function MadreDetallePage() {
               </tr>
             </thead>
             <tbody>
-              {madre.hijas.map((h: any) => (
-                <tr key={h.id} className="border-t">
-                  <td className="px-3 py-2">{h.folio ?? 'pendiente'}</td>
-                  <td className="px-3 py-2">
-                    {[h.unidad?.marca, h.unidad?.modelo].filter(Boolean).join(' ') || '—'}
-                    <div className="text-xs text-slate-400">{h.unidad?.vin}</div>
-                  </td>
-                  <td className="px-3 py-2">{mxn(h.primaNeta)}</td>
-                  <td className="px-3 py-2">{mxn(h.financiamiento)}</td>
-                  <td className="px-3 py-2">{mxn(h.gastosExpedicion)}</td>
-                  <td className="px-3 py-2">{mxn(h.iva)}</td>
-                  <td className="px-3 py-2">{mxn(h.primaTotal)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <Link href={`/polizas/${h.id}`} className="text-xs text-marca">
-                      Editar
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {madre.hijas.map((h: any) => {
+                const cancelada = h.estado === 'cancelada';
+                return (
+                  <tr key={h.id} className={`border-t ${cancelada ? 'text-red-700' : ''}`}>
+                    <td className="px-3 py-2">
+                      {h.folio ?? 'pendiente'}
+                      {cancelada && (
+                        <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">
+                          Cancelada
+                        </span>
+                      )}
+                      {!cancelada && h.altaPorEndoso && (
+                        <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-800">
+                          Alta
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {[h.unidad?.marca, h.unidad?.modelo].filter(Boolean).join(' ') || '—'}
+                      <div className="text-xs text-slate-400">{h.unidad?.vin}</div>
+                    </td>
+                    <td className="px-3 py-2">{mxn(h.primaNeta)}</td>
+                    <td className="px-3 py-2">{mxn(h.financiamiento)}</td>
+                    <td className="px-3 py-2">{mxn(h.gastosExpedicion)}</td>
+                    <td className="px-3 py-2">{mxn(h.iva)}</td>
+                    <td className="px-3 py-2">
+                      {cancelada
+                        ? `− ${mxn(h.primaTotal)}`
+                        : mxn(h.primaTotal)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Link href={`/polizas/${h.id}`} className="text-xs text-marca">
+                        Editar
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

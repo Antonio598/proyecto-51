@@ -24,13 +24,16 @@ export default function PolizasPage() {
   const [checklist, setChecklist] = useState<any>(null);
   const [emitiendo, setEmitiendo] = useState<string | null>(null);
   const [folio, setFolio] = useState('');
+  const [serie, setSerie] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
 
-  async function cargar() {
+  async function cargar(serieBusqueda: string = serie) {
     try {
-      setPolizas(await api.listarPolizas({ expedienteId }));
+      setPolizas(
+        await api.listarPolizas({ expedienteId, serie: serieBusqueda.trim() || undefined }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar');
     }
@@ -85,6 +88,36 @@ export default function PolizasPage() {
         <div className="rounded bg-green-50 px-3 py-2 text-sm text-green-800">{mensaje}</div>
       )}
       {error && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          cargar();
+        }}
+        className="flex flex-wrap gap-2"
+      >
+        <input
+          value={serie}
+          onChange={(e) => setSerie(e.target.value.toUpperCase())}
+          placeholder="Buscar por número de serie (VIN)…"
+          className="w-full max-w-sm rounded border border-slate-300 px-3 py-2 text-sm uppercase"
+        />
+        <button type="submit" className="rounded bg-marca px-3 py-2 text-sm text-white">
+          Buscar
+        </button>
+        {serie && (
+          <button
+            type="button"
+            onClick={() => {
+              setSerie('');
+              cargar('');
+            }}
+            className="rounded border px-3 py-2 text-sm"
+          >
+            Limpiar
+          </button>
+        )}
+      </form>
 
       {expedientesConPendientes.length > 0 && (
         <div className="flex flex-wrap gap-2 rounded-lg bg-white p-4 shadow">

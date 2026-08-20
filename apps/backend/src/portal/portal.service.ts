@@ -6,6 +6,7 @@ import { StorageService } from '../storage/storage.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { ConciliacionService } from '../pagos/conciliacion.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { normalizarRfc } from '../clientes/rfc.util';
 
 /** Extensiones de contenido que el portal acepta (dentro o fuera de un ZIP). */
 const EXTENSIONES_OK = ['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
@@ -197,53 +198,63 @@ export class PortalService {
   }
 
   /**
-   * Consulta de autoservicio: el cliente teclea su teléfono + correo y ve la
+   * Consulta de autoservicio: el cliente teclea su RFC + correo y ve la
    * información que el despacho tiene sobre él (flota, pólizas y cobranza).
    *
-   * Sin OTP, la contención es doble: teléfono Y correo deben coincidir con el
-   * registro. Si algo no cuadra se responde con un mensaje genérico para no
-   * revelar si un número existe o no.
+   * El RFC es la llave del cliente; la contención es doble: RFC Y correo deben
+   * coincidir con el registro. Si algo no cuadra se responde con un mensaje
+   * genérico para no revelar si un RFC existe o no.
    */
-  async consultar(datos: { telefono: string; email: string }) {
-    const numero = WhatsappService.normalizarNumero(datos.telefono);
+  async consultar(datos: { rfc: string; email: string }) {
+    const rfc = normalizarRfc(datos.rfc);
     const email = datos.email.trim().toLowerCase();
 
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { whatsappNumber: numero },
-      include: {
-        unidades: { where: { activo: true }, orderBy: { createdAt: 'asc' } },
-        polizas: {
-          orderBy: { vigenciaInicio: 'desc' },
+    const cliente = rfc
+      ? await this.prisma.cliente.findUnique({
+          where: { rfc },
           include: {
-            aseguradora: { select: { nombre: true } },
-            unidad: { select: { marca: true, modelo: true, vin: true, numeroEconomico: true } },
-            cortes: { orderBy: { fechaProximoPago: 'asc' } },
-            facturas: { orderBy: { createdAt: 'desc' } },
+            unidades: { where: { activo: true }, orderBy: { createdAt: 'asc' } },
+            polizas: {
+              orderBy: { vigenciaInicio: 'desc' },
+              include: {
+                aseguradora: { select: { nombre: true } },
+                unidad: {
+                  select: { marca: true, modelo: true, vin: true, numeroEconomico: true },
+                },
+                facturas: { orderBy: { createdAt: 'desc' } },
+              },
+            },
+            polizasMadre: {
+              include: {
+                aseguradora: { select: { nombre: true } },
+                cortes: {
+                  where: { estado: { not: EstadoCobranza.pagado } },
+                  orderBy: { numeroParcialidad: 'asc' },
+                },
+              },
+            },
           },
-        },
-      },
-    });
+        })
+      : null;
 
     const correoCoincide =
       cliente?.contactoEmail && cliente.contactoEmail.trim().toLowerCase() === email;
     if (!cliente || !correoCoincide) {
       throw new NotFoundException(
-        'No encontramos información con ese teléfono y correo. Verifica que sean los mismos que registraste con el despacho.',
+        'No encontramos información con ese RFC y correo. Verifica que sean los mismos que registraste con el despacho.',
       );
     }
 
-    // Cobranza abierta (todo lo que no esté pagado), aplanada por póliza.
-    const cobranza = cliente.polizas.flatMap((p) =>
-      p.cortes
-        .filter((c) => c.estado !== EstadoCobranza.pagado)
-        .map((c) => ({
-          periodo: c.periodo,
-          estado: c.estado,
-          montoEsperado: c.montoEsperado,
-          fechaProximoPago: c.fechaProximoPago,
-          aseguradora: p.aseguradora.nombre,
-          unidad: [p.unidad.marca, p.unidad.modelo].filter(Boolean).join(' ') || p.unidad.vin,
-        })),
+    // Cobranza abierta, concentrada por Póliza Madre (una por aseguradora).
+    const cobranza = cliente.polizasMadre.flatMap((m) =>
+      m.cortes.map((c) => ({
+        periodo: c.periodo,
+        numeroParcialidad: c.numeroParcialidad,
+        estado: c.estado,
+        montoEsperado: c.montoEsperado,
+        fechaVencimiento: c.fechaVencimiento,
+        aseguradora: m.aseguradora.nombre,
+      })),
     );
 
     // Documentos descargables: carátulas de póliza (pdfDocId), facturas y
@@ -315,6 +326,7 @@ export class PortalService {
     return {
       cliente: {
         razonSocial: cliente.razonSocial,
+        rfc: cliente.rfc,
         contactoNombre: cliente.contactoNombre,
         contactoEmail: cliente.contactoEmail,
         telefono: cliente.whatsappNumber,

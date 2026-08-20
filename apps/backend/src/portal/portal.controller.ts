@@ -58,6 +58,6 @@ export class PortalController {
   @Throttle({ default: { ttl: 600_000, limit: 20 } })
   @Post('consultar')
   consultar(@Body() dto: ConsultarPortalDto) {
-    return this.portal.consultar({ telefono: dto.telefono, email: dto.email });
+    return this.portal.consultar({ rfc: dto.rfc, email: dto.email });
   }
 }

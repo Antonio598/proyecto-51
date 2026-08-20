@@ -100,6 +100,13 @@ enum Periodicidad {
   trimestral
 }
 
+// Movimiento de un endoso: alta (nueva unidad/póliza), baja o cancelación.
+enum MovimientoEndoso {
+  alta
+  baja
+  cancelacion
+}
+
 // ───────────────────────── Usuarios ─────────────────────────
 
 model User {
@@ -144,7 +151,9 @@ model Notificacion {
 model Cliente {
   id             String   @id @default(cuid())
   razonSocial    String
-  rfc            String?
+  // RFC: llave principal para identificar y agrupar al cliente. Único cuando
+  // existe (Postgres admite múltiples NULL). Se normaliza en mayúsculas.
+  rfc            String?  @unique
   datosFiscales  Json?    // dirección fiscal, régimen, uso CFDI, etc.
   contactoNombre String?
   contactoEmail  String?
@@ -161,6 +170,7 @@ model Cliente {
   polizas      Poliza[]
   polizasMadre PolizaMadre[]
   documentos   Documento[]
+  facturas     Factura[]
 
   @@index([razonSocial])
 }
@@ -392,6 +402,10 @@ model Poliza {
   primaTotal       Decimal? @db.Decimal(14, 2)
   numeroPagos      Int?
   estado         EstadoPoliza @default(pendiente_emision)
+  // Endosos: fecha de cancelación (baja) y bandera de alta por endoso (para
+  // pintar la cobranza en rojo/verde). La póliza cancelada NO se borra.
+  canceladaEn    DateTime?
+  altaPorEndoso  Boolean      @default(false)
   pdfDocId       String?
   // Liga externa (Dropbox/nube) al PDF de la póliza. El técnico la registra a
   // mano; no hay API con la aseguradora. Alternativa a subir el archivo.
@@ -403,6 +417,7 @@ model Poliza {
   pagos      Pago[]
   documentos Documento[]
   facturas   Factura[]
+  endosos    Endoso[]
   // RESERVADO para el módulo futuro de Siniestros (sin lógica en esta fase).
   siniestros Siniestro[]
 
@@ -531,14 +546,38 @@ model Pago {
 
 model Factura {
   id                 String        @id @default(cuid())
-  polizaId           String
-  poliza             Poliza        @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  // Una factura se liga por RFC al cliente; la póliza es opcional (puede venir
+  // de una carga por RFC sin póliza específica).
+  polizaId           String?
+  poliza             Poliza?       @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  clienteId          String?
+  cliente            Cliente?      @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   tipo               TipoDocumento // factura | complemento
   storageDocId       String?
   enviadoAlClienteEn DateTime?
   createdAt          DateTime      @default(now())
 
   @@index([polizaId])
+  @@index([clienteId])
+}
+
+// Endoso de alta/baja/cancelación, leído por IA de un documento y aplicado tras
+// confirmación humana. La póliza referida se localiza por número de serie.
+model Endoso {
+  id           String           @id @default(cuid())
+  movimiento   MovimientoEndoso
+  serie        String?
+  rfc          String?
+  importe      Decimal?         @db.Decimal(14, 2)
+  polizaId     String?
+  poliza       Poliza?          @relation(fields: [polizaId], references: [id], onDelete: SetNull)
+  storageDocId String?
+  notas        String?
+  aplicadoEn   DateTime?
+  createdAt    DateTime         @default(now())
+
+  @@index([polizaId])
+  @@index([serie])
 }
 
 // ───────────────────────── Auditoría ─────────────────────────

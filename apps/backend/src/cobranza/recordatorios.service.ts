@@ -127,6 +127,8 @@ export class RecordatoriosService {
         aseguradora: { nombre: string };
         hijas: Array<{
           folio: string | null;
+          estado: string;
+          altaPorEndoso: boolean;
           primaNeta: unknown;
           financiamiento: unknown;
           gastosExpedicion: unknown;
@@ -149,7 +151,7 @@ export class RecordatoriosService {
 
     // Desglose por hija de ESTA parcialidad (para que las líneas sumen al total).
     const idx = corte.numeroParcialidad - 1;
-    const desglose: LineaDesglose[] = madre.hijas.map((h) => {
+    const montoHija = (h: (typeof madre.hijas)[number]) => {
       const calH = generarCalendario({
         primaNeta: num(h.primaNeta),
         financiamiento: num(h.financiamiento),
@@ -159,12 +161,26 @@ export class RecordatoriosService {
         periodicidad: madre.periodicidad,
         fechaEmision: madre.fechaEmision ?? new Date(),
       });
-      return {
-        etiqueta: `Póliza ${h.folio ?? 'pendiente'}`,
-        detalle: [h.unidad.marca, h.unidad.modelo].filter(Boolean).join(' ') || h.unidad.vin || '',
-        monto: calH[idx]?.montoEsperado ?? 0,
-      };
+      return calH[idx]?.montoEsperado ?? 0;
+    };
+    const linea = (h: (typeof madre.hijas)[number], prefijo = ''): LineaDesglose => ({
+      etiqueta: `${prefijo}Póliza ${h.folio ?? 'pendiente'}`,
+      detalle: [h.unidad.marca, h.unidad.modelo].filter(Boolean).join(' ') || h.unidad.vin || '',
+      monto: montoHija(h),
     });
+
+    const activas = madre.hijas.filter((h) => h.estado !== 'cancelada');
+    const canceladas = madre.hijas.filter((h) => h.estado === 'cancelada');
+    // Desglose neutro: pólizas vigentes que no son alta reciente por endoso.
+    const desglose: LineaDesglose[] = activas
+      .filter((h) => !h.altaPorEndoso)
+      .map((h) => linea(h));
+    // Altas (verde): pólizas agregadas por endoso; suman al total.
+    const altas: LineaDesglose[] = activas
+      .filter((h) => h.altaPorEndoso)
+      .map((h) => linea(h, 'Alta · '));
+    // Bajas (rojo, negativo): cancelaciones; informativas, no suman al total.
+    const bajas: LineaDesglose[] = canceladas.map((h) => linea(h, 'Cancelación · '));
 
     // Copy adaptativo con IA; si falla, texto determinista.
     const copy = await this.copy({
@@ -189,8 +205,8 @@ export class RecordatoriosService {
       fechaLimite: corte.fechaVencimiento.toLocaleDateString('es-MX'),
       aseguradora: madre.aseguradora.nombre,
       desglose,
-      altas: [], // Fase 4: endosos de alta (verde)
-      bajas: [], // Fase 4: cancelaciones (rojo, negativo)
+      altas,
+      bajas,
       vencido,
     });
 

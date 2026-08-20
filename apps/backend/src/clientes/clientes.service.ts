@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateClienteDto, UpdateClienteDto } from './dto/cliente.dto';
+import { normalizarRfc } from './rfc.util';
 
 @Injectable()
 export class ClientesService {
@@ -54,7 +55,11 @@ export class ClientesService {
 
   async crear(dto: CreateClienteDto, actorUserId?: string) {
     const cliente = await this.prisma.cliente.create({
-      data: { ...dto, datosFiscales: dto.datosFiscales as Prisma.InputJsonValue },
+      data: {
+        ...dto,
+        rfc: normalizarRfc(dto.rfc),
+        datosFiscales: dto.datosFiscales as Prisma.InputJsonValue,
+      },
     });
     await this.audit.registrar({
       entidad: 'Cliente',
@@ -70,7 +75,11 @@ export class ClientesService {
     await this.obtener(id);
     const cliente = await this.prisma.cliente.update({
       where: { id },
-      data: { ...dto, datosFiscales: dto.datosFiscales as Prisma.InputJsonValue },
+      data: {
+        ...dto,
+        ...(dto.rfc !== undefined ? { rfc: normalizarRfc(dto.rfc) } : {}),
+        datosFiscales: dto.datosFiscales as Prisma.InputJsonValue,
+      },
     });
     await this.audit.registrar({
       entidad: 'Cliente',

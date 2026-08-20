@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { EstadoCobranza, Periodicidad, Prisma } from '@prisma/client';
+import { EstadoCobranza, EstadoPoliza, Periodicidad, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -72,7 +72,10 @@ export class PolizasMadreService {
 
   /** Recalcula los totales consolidados sumando las hijas y refresca el corte abierto. */
   async recalcularTotales(madreId: string) {
-    const hijas = await this.prisma.poliza.findMany({ where: { polizaMadreId: madreId } });
+    // Las pólizas canceladas (bajas) no cuentan para el total de la Madre.
+    const hijas = await this.prisma.poliza.findMany({
+      where: { polizaMadreId: madreId, estado: { not: EstadoPoliza.cancelada } },
+    });
     const suma = (campo: keyof (typeof hijas)[number]) =>
       hijas.reduce((s, h) => s + num(h[campo] as unknown), 0);
 

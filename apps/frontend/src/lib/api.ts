@@ -259,6 +259,7 @@ export async function enviarPortal(datos: {
 export interface PortalCuenta {
   cliente: {
     razonSocial: string;
+    rfc: string | null;
     contactoNombre: string | null;
     contactoEmail: string | null;
     telefono: string | null;
@@ -277,11 +278,11 @@ export interface PortalCuenta {
   }[];
   cobranza: {
     periodo: string;
+    numeroParcialidad: number;
     estado: string;
     montoEsperado: string | null;
-    fechaProximoPago: string;
+    fechaVencimiento: string;
     aseguradora: string;
-    unidad: string | null;
   }[];
   facturas: {
     tipo: string;
@@ -296,9 +297,9 @@ export interface PortalCuenta {
   }[];
 }
 
-/** Consulta pública de cuenta (teléfono + correo). No usa token. */
+/** Consulta pública de cuenta (RFC + correo). No usa token. */
 export async function consultarPortal(datos: {
-  telefono: string;
+  rfc: string;
   email: string;
 }): Promise<PortalCuenta> {
   const res = await fetch(`${API_URL}/api/portal/consultar`, {
@@ -410,12 +411,17 @@ export const api = {
     request<any>(`/expedientes/${id}/propuesta-cliente/enviar`, { method: 'POST' }),
 
   // ── Pólizas y emisión (Fase D) ──
-  listarPolizas: (params: { estado?: string; clienteId?: string; expedienteId?: string } = {}) => {
+  listarPolizas: (
+    params: { estado?: string; clienteId?: string; expedienteId?: string; serie?: string } = {},
+  ) => {
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v) as [string, string][],
     ).toString();
     return request<any[]>(`/polizas${q ? `?${q}` : ''}`);
   },
+  /** Consulta de vigencia por número de serie (VIN). */
+  consultarVigencia: (serie: string) =>
+    request<any>(`/polizas/consulta?serie=${encodeURIComponent(serie)}`),
   obtenerPoliza: (id: string) => request<any>(`/polizas/${id}`),
   prepararEmision: (expedienteId: string, data: Record<string, unknown>) =>
     request<any>(`/polizas/expediente/${expedienteId}/emitir`, {
@@ -449,9 +455,19 @@ export const api = {
 
   // ── Facturas y complementos (módulo 11) ──
   listarFacturas: (polizaId: string) => request<any[]>(`/facturas?polizaId=${polizaId}`),
+  listarFacturasCliente: (clienteId: string) =>
+    request<any[]>(`/facturas?clienteId=${clienteId}`),
   subirFactura: (polizaId: string, archivo: File, tipo: 'factura' | 'complemento') =>
     upload<any>(`/facturas/poliza/${polizaId}`, archivo, { tipo }),
+  /** Sube una factura y la liga por RFC al cliente (la IA lee el RFC). */
+  subirFacturaPorRfc: (archivo: File, tipo: 'factura' | 'complemento') =>
+    upload<any>('/facturas/por-rfc', archivo, { tipo }),
   enviarFactura: (id: string) => request<any>(`/facturas/${id}/enviar`, { method: 'POST' }),
+
+  // ── Endosos (altas/bajas) ──
+  listarEndosos: () => request<any[]>('/endosos'),
+  procesarEndoso: (archivo: File) => upload<any>('/endosos', archivo),
+  aplicarEndoso: (id: string) => request<any>(`/endosos/${id}/aplicar`, { method: 'POST' }),
 
   // ── Cobranza ──
   dashboardCobranza: () => request<any>('/cobranza/dashboard'),

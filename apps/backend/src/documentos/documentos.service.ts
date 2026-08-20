@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
 import { ClaudeService, UnidadExtraida } from '../ia/claude.service';
+import { normalizarRfc } from '../clientes/rfc.util';
 
 /** Debajo de este umbral, el campo se marca para revisión humana obligatoria. */
 export const UMBRAL_CONFIANZA = 0.8;
@@ -495,7 +496,7 @@ export class DocumentosService {
     const resumen = await this.prisma.$transaction(
       async (tx) => {
         // RFC / razón social del cliente.
-        const rfc = datosCliente?.rfc?.trim();
+        const rfc = normalizarRfc(datosCliente?.rfc);
         const razonSocial = datosCliente?.razonSocial?.trim();
         if (rfc || razonSocial) {
           const cli = await tx.cliente.findUnique({
@@ -504,7 +505,14 @@ export class DocumentosService {
           });
           const esProvisional = /^cliente portal/i.test(cli?.razonSocial ?? '');
           const dataCliente: { rfc?: string; razonSocial?: string } = {};
-          if (rfc) dataCliente.rfc = rfc;
+          if (rfc) {
+            // El RFC es único: sólo lo asignamos si ningún otro cliente lo tiene.
+            const conRfc = await tx.cliente.findUnique({
+              where: { rfc },
+              select: { id: true },
+            });
+            if (!conRfc || conRfc.id === clienteId) dataCliente.rfc = rfc;
+          }
           if (razonSocial && esProvisional) dataCliente.razonSocial = razonSocial;
           if (Object.keys(dataCliente).length > 0) {
             await tx.cliente.update({ where: { id: clienteId }, data: dataCliente });

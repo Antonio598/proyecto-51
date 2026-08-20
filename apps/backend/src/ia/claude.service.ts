@@ -461,6 +461,113 @@ export class ClaudeService {
   }
 
   /**
+   * Lee un documento de endoso e identifica el movimiento (alta/baja/cancelación),
+   * el número de serie, el RFC y el importe. Si un dato no aparece, devuelve null.
+   */
+  async leerEndoso(
+    contenido: Buffer,
+    mime: string,
+  ): Promise<{
+    movimiento: 'alta' | 'baja' | 'cancelacion' | null;
+    serie: string | null;
+    rfc: string | null;
+    importe: number | null;
+    aseguradora: string | null;
+    no_poliza: string | null;
+    confianza: number;
+  }> {
+    const respuesta = await this.client.messages.create({
+      model: this.modelo,
+      max_tokens: 4000,
+      system:
+        'Lees endosos de pólizas de seguro mexicanas (documentos de movimiento). Identifica si es un ALTA (inclusión de unidad), una BAJA o una CANCELACIÓN. Extrae el número de serie (VIN), el RFC del contratante, el importe del endoso (puede ser negativo en bajas) y el número de póliza. Si un dato no aparece, devuelve null. No inventes datos.',
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              movimiento: {
+                type: ['string', 'null'],
+                enum: ['alta', 'baja', 'cancelacion', null],
+                description: 'Tipo de movimiento del endoso',
+              },
+              serie: { type: ['string', 'null'], description: 'Número de serie / VIN' },
+              rfc: { type: ['string', 'null'] },
+              importe: { type: ['number', 'null'], description: 'Importe del endoso en MXN' },
+              aseguradora: { type: ['string', 'null'] },
+              no_poliza: { type: ['string', 'null'] },
+              confianza: { type: 'number', description: 'Confianza global de 0 a 1' },
+            },
+            required: ['movimiento', 'serie', 'rfc', 'importe', 'aseguradora', 'no_poliza', 'confianza'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            this.construirBloqueDocumento(contenido, mime, 'endoso'),
+            { type: 'text', text: 'Extrae los datos de este endoso.' },
+          ],
+        },
+      ],
+    });
+
+    return this.parsearJson(respuesta);
+  }
+
+  /**
+   * Lee una factura/CFDI y extrae el RFC del receptor para ligarla al cliente.
+   */
+  async leerFactura(
+    contenido: Buffer,
+    mime: string,
+  ): Promise<{
+    rfc: string | null;
+    total: number | null;
+    uuid: string | null;
+    emisor: string | null;
+    confianza: number;
+  }> {
+    const respuesta = await this.client.messages.create({
+      model: this.modelo,
+      max_tokens: 4000,
+      system:
+        'Lees facturas / CFDI mexicanos. Extrae el RFC del RECEPTOR (el cliente al que se le factura), el total, el UUID/folio fiscal y el nombre del emisor. Si un dato no aparece, devuelve null. No inventes datos.',
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              rfc: { type: ['string', 'null'], description: 'RFC del receptor (cliente)' },
+              total: { type: ['number', 'null'] },
+              uuid: { type: ['string', 'null'] },
+              emisor: { type: ['string', 'null'] },
+              confianza: { type: 'number', description: 'Confianza global de 0 a 1' },
+            },
+            required: ['rfc', 'total', 'uuid', 'emisor', 'confianza'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            this.construirBloqueDocumento(contenido, mime, 'factura'),
+            { type: 'text', text: 'Extrae los datos de esta factura.' },
+          ],
+        },
+      ],
+    });
+
+    return this.parsearJson(respuesta);
+  }
+
+  /**
    * Redacta los textos narrativos de la propuesta al cliente.
    * Sólo redacta: las cifras las inserta el sistema desde la base de datos,
    * para que el modelo no pueda inventar sumas aseguradas ni primas.

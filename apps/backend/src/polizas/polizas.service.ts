@@ -227,12 +227,19 @@ export class PolizasService {
     return poliza;
   }
 
-  listar(filtros: { estado?: EstadoPoliza; clienteId?: string; expedienteId?: string }) {
+  listar(filtros: {
+    estado?: EstadoPoliza;
+    clienteId?: string;
+    expedienteId?: string;
+    serie?: string;
+  }) {
+    const serie = filtros.serie?.trim();
     return this.prisma.poliza.findMany({
       where: {
         estado: filtros.estado,
         clienteId: filtros.clienteId,
         expedienteId: filtros.expedienteId,
+        ...(serie ? { unidad: { vin: { contains: serie, mode: 'insensitive' } } } : {}),
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -241,6 +248,79 @@ export class PolizasService {
         aseguradora: { select: { id: true, nombre: true } },
       },
     });
+  }
+
+  /** Estado de vigencia legible de una póliza para la consulta por serie. */
+  private estadoVigencia(poliza: {
+    estado: EstadoPoliza;
+    vigenciaFin: Date | null;
+  }): 'ACTIVA' | 'CANCELADA' | 'INACTIVA' {
+    if (poliza.estado === EstadoPoliza.cancelada) return 'CANCELADA';
+    if (poliza.estado === EstadoPoliza.emitida) {
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      if (poliza.vigenciaFin && poliza.vigenciaFin < hoy) return 'INACTIVA'; // vencida
+      return 'ACTIVA';
+    }
+    return 'INACTIVA'; // pendiente de emisión
+  }
+
+  /**
+   * Consulta por número de serie (VIN): localiza la unidad y su póliza más
+   * reciente, y responde el estado de vigencia + cliente, RFC y fechas.
+   */
+  async consultarPorSerie(serie: string) {
+    const s = serie.trim();
+    if (!s) throw new BadRequestException('Escribe un número de serie');
+
+    const unidad = await this.prisma.unidad.findFirst({
+      where: { vin: { equals: s, mode: 'insensitive' } },
+      include: {
+        polizas: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            cliente: { select: { id: true, razonSocial: true, rfc: true } },
+            aseguradora: { select: { nombre: true } },
+            polizaMadre: { select: { id: true } },
+          },
+        },
+      },
+    });
+
+    if (!unidad || unidad.polizas.length === 0) {
+      return { serie: s, encontrada: false as const };
+    }
+
+    const p = unidad.polizas[0];
+    return {
+      serie: s,
+      encontrada: true as const,
+      vigencia: this.estadoVigencia(p),
+      poliza: {
+        id: p.id,
+        folio: p.folio,
+        estado: p.estado,
+        vigenciaInicio: p.vigenciaInicio,
+        vigenciaFin: p.vigenciaFin,
+        aseguradora: p.aseguradora.nombre,
+        cliente: p.cliente,
+        polizaMadreId: p.polizaMadreId,
+      },
+      unidad: {
+        vin: unidad.vin,
+        marca: unidad.marca,
+        modelo: unidad.modelo,
+        numeroEconomico: unidad.numeroEconomico,
+      },
+      historial: unidad.polizas.map((h) => ({
+        id: h.id,
+        folio: h.folio,
+        aseguradora: h.aseguradora.nombre,
+        vigencia: this.estadoVigencia(h),
+        vigenciaInicio: h.vigenciaInicio,
+        vigenciaFin: h.vigenciaFin,
+      })),
+    };
   }
 
   async obtener(id: string) {

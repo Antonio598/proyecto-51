@@ -37,8 +37,18 @@ export class PolizasController {
     @Query('estado') estado?: EstadoPoliza,
     @Query('clienteId') clienteId?: string,
     @Query('expedienteId') expedienteId?: string,
+    @Query('serie') serie?: string,
   ) {
-    return this.polizas.listar({ estado, clienteId, expedienteId });
+    return this.polizas.listar({ estado, clienteId, expedienteId, serie });
+  }
+
+  /**
+   * Consulta de vigencia por número de serie (VIN): responde
+   * ACTIVA/CANCELADA/INACTIVA + cliente, RFC y fechas. Read-only.
+   */
+  @Get('consulta')
+  consultaVigencia(@Query('serie') serie: string) {
+    return this.polizas.consultarPorSerie(serie ?? '');
   }
 
   @Get(':id')

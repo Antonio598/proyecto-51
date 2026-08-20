@@ -19,6 +19,7 @@ import { PolizasModule } from './polizas/polizas.module';
 import { CobranzaModule } from './cobranza/cobranza.module';
 import { PagosModule } from './pagos/pagos.module';
 import { FacturasModule } from './facturas/facturas.module';
+import { EndososModule } from './endosos/endosos.module';
 import { HealthModule } from './health/health.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
@@ -48,6 +49,7 @@ import { RolesGuard } from './auth/roles.guard';
     CobranzaModule,
     PagosModule,
     FacturasModule,
+    EndososModule,
     HealthModule,
     BootstrapModule,
     UsuariosModule,
