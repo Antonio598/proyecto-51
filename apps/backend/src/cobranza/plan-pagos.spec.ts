@@ -53,7 +53,13 @@ describe('generarCalendario', () => {
   it('agenda el primer pago 10 días después de la emisión y respeta la periodicidad', () => {
     const cal = generarCalendario(entrada({ periodicidad: Periodicidad.trimestral }));
     expect(cal[0].fechaVencimiento.toISOString().slice(0, 10)).toBe('2026-08-27');
-    expect(cal[1].fechaVencimiento.toISOString().slice(0, 10)).toBe('2026-11-27'); // +3 meses
+    expect(cal[1].fechaVencimiento.toISOString().slice(0, 10)).toBe('2026-11-25'); // +90 días
+  });
+
+  it('en mensual cada parcialidad vence 30 días después de la anterior', () => {
+    const cal = generarCalendario(entrada({ periodicidad: Periodicidad.mensual }));
+    expect(cal[0].fechaVencimiento.toISOString().slice(0, 10)).toBe('2026-08-27');
+    expect(cal[1].fechaVencimiento.toISOString().slice(0, 10)).toBe('2026-09-26'); // +30 días
   });
 
   it('de contado es una sola parcialidad igual al total', () => {

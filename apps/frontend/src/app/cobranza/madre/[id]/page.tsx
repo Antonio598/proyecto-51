@@ -37,6 +37,17 @@ export default function MadreDetallePage() {
   const [ocupado, setOcupado] = useState(false);
   const [periodicidad, setPeriodicidad] = useState('');
   const [fechaEmision, setFechaEmision] = useState('');
+  const [totalesManual, setTotalesManual] = useState(false);
+  const [montos, setMontos] = useState({
+    primaNeta: '',
+    financiamiento: '',
+    gastosExpedicion: '',
+    iva: '',
+    primaTotal: '',
+  });
+  const [vencimientos, setVencimientos] = useState<Record<number, string>>({});
+
+  const s = (v: unknown) => (v != null ? String(v) : '');
 
   const cargar = useCallback(async () => {
     try {
@@ -44,6 +55,22 @@ export default function MadreDetallePage() {
       setMadre(m);
       setPeriodicidad(m.periodicidad);
       setFechaEmision(m.fechaEmision ? String(m.fechaEmision).slice(0, 10) : '');
+      setTotalesManual(!!m.totalesManual);
+      setMontos({
+        primaNeta: s(m.primaNeta),
+        financiamiento: s(m.financiamiento),
+        gastosExpedicion: s(m.gastosExpedicion),
+        iva: s(m.iva),
+        primaTotal: s(m.primaTotal),
+      });
+      setVencimientos(
+        Object.fromEntries(
+          (m.cortes ?? []).map((c: any) => [
+            c.numeroParcialidad,
+            String(c.fechaVencimiento).slice(0, 10),
+          ]),
+        ),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar');
     }
@@ -53,6 +80,8 @@ export default function MadreDetallePage() {
     cargar();
   }, [cargar]);
 
+  const numOpt = (v: string) => (v.trim() === '' ? undefined : Number(v.replace(/[,$\s]/g, '')));
+
   async function guardarPlan() {
     setOcupado(true);
     setError('');
@@ -61,11 +90,38 @@ export default function MadreDetallePage() {
       await api.configurarPlanMadre(id, {
         periodicidad,
         ...(fechaEmision ? { fechaEmision: new Date(fechaEmision).toISOString() } : {}),
+        totalesManual,
+        ...(totalesManual
+          ? {
+              primaNeta: numOpt(montos.primaNeta),
+              financiamiento: numOpt(montos.financiamiento),
+              gastosExpedicion: numOpt(montos.gastosExpedicion),
+              iva: numOpt(montos.iva),
+              primaTotal: numOpt(montos.primaTotal),
+            }
+          : {}),
       });
-      setMensaje('Plan de pagos actualizado.');
+      setMensaje('Póliza Madre actualizada.');
       await cargar();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function guardarVencimiento(num: number) {
+    const fecha = vencimientos[num];
+    if (!fecha) return;
+    setOcupado(true);
+    setError('');
+    setMensaje('');
+    try {
+      await api.editarVencimientoMadre(id, num, new Date(fecha).toISOString());
+      setMensaje(`Fecha de vencimiento de la parcialidad ${num} actualizada.`);
+      await cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
     } finally {
       setOcupado(false);
     }
@@ -178,6 +234,41 @@ export default function MadreDetallePage() {
           </div>
         </div>
 
+        {/* Totales de la Madre (edición manual) */}
+        <div className="rounded border border-slate-200 p-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={totalesManual}
+              onChange={(e) => setTotalesManual(e.target.checked)}
+            />
+            Capturar los totales a mano en la Madre (si se apaga, se suman de las hijas)
+          </label>
+          {totalesManual && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {(
+                [
+                  ['primaNeta', 'Prima neta'],
+                  ['financiamiento', 'Financiamiento'],
+                  ['gastosExpedicion', 'Gastos de expedición'],
+                  ['iva', 'IVA'],
+                  ['primaTotal', 'Total'],
+                ] as const
+              ).map(([k, label]) => (
+                <label key={k} className="text-sm">
+                  <span className="block text-slate-500">{label}</span>
+                  <input
+                    inputMode="decimal"
+                    value={montos[k]}
+                    onChange={(e) => setMontos({ ...montos, [k]: e.target.value })}
+                    className="mt-1 w-full rounded border px-3 py-1.5"
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
         {abierta && (
           <div className="flex items-center justify-between rounded border border-marca/40 bg-marca/5 px-3 py-2 text-sm">
             <div>
@@ -220,8 +311,33 @@ export default function MadreDetallePage() {
                     <td className="px-3 py-2">
                       {p.esPrimerPago ? 'Primer pago (con financiamiento y expedición)' : 'Prima neta proporcional'}
                     </td>
-                    <td className="px-3 py-2">{fecha(p.fechaVencimiento)}</td>
-                    <td className="px-3 py-2">{mxn(p.montoEsperado)}</td>
+                    <td className="px-3 py-2">
+                      {corte && estado !== 'pagado' ? (
+                        <span className="flex items-center gap-1">
+                          <input
+                            type="date"
+                            value={vencimientos[p.numeroParcialidad] ?? ''}
+                            onChange={(e) =>
+                              setVencimientos({
+                                ...vencimientos,
+                                [p.numeroParcialidad]: e.target.value,
+                              })
+                            }
+                            className="rounded border px-2 py-1 text-xs"
+                          />
+                          <button
+                            onClick={() => guardarVencimiento(p.numeroParcialidad)}
+                            disabled={ocupado}
+                            className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+                          >
+                            Guardar
+                          </button>
+                        </span>
+                      ) : (
+                        fecha(corte?.fechaVencimiento ?? p.fechaVencimiento)
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{mxn(corte?.montoEsperado ?? p.montoEsperado)}</td>
                     <td className="px-3 py-2">
                       {estado ? (
                         <span

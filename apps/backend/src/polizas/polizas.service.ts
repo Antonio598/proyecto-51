@@ -347,7 +347,13 @@ export class PolizasService {
    */
   async marcarEmitida(
     id: string,
-    datos: { folio: string; vigenciaInicio?: Date; vigenciaFin?: Date; prima?: number },
+    datos: {
+      serie?: string;
+      folio?: string;
+      vigenciaInicio?: Date;
+      vigenciaFin?: Date;
+      prima?: number;
+    },
     actorUserId: string,
   ) {
     const poliza = await this.obtener(id);
@@ -357,11 +363,17 @@ export class PolizasService {
 
     const inicio = datos.vigenciaInicio ?? poliza.vigenciaInicio ?? new Date();
     const fin = datos.vigenciaFin ?? poliza.vigenciaFin ?? null;
+    const serie = datos.serie?.trim();
+
+    // Al emitir se captura/actualiza el número de serie (VIN) de la unidad.
+    if (serie) {
+      await this.prisma.unidad.update({ where: { id: poliza.unidadId }, data: { vin: serie } });
+    }
 
     const actualizada = await this.prisma.poliza.update({
       where: { id },
       data: {
-        folio: datos.folio,
+        ...(datos.folio ? { folio: datos.folio } : {}),
         estado: EstadoPoliza.emitida,
         vigenciaInicio: inicio,
         vigenciaFin: fin,
@@ -377,10 +389,10 @@ export class PolizasService {
       entidadId: id,
       accion: 'emitida',
       actorUserId,
-      diff: { folio: datos.folio },
+      diff: { serie: serie ?? null, folio: datos.folio ?? null },
     });
 
-    this.logger.log(`Póliza ${id} emitida con folio ${datos.folio}`);
+    this.logger.log(`Póliza ${id} emitida (serie ${serie ?? 's/serie'})`);
     return actualizada;
   }
 
@@ -394,6 +406,7 @@ export class PolizasService {
     id: string,
     datos: {
       folio?: string;
+      prima?: number;
       primaNeta?: number;
       financiamiento?: number;
       gastosExpedicion?: number;
@@ -409,6 +422,7 @@ export class PolizasService {
       where: { id },
       data: {
         ...(datos.folio !== undefined ? { folio: datos.folio || null } : {}),
+        ...(datos.prima !== undefined ? { prima: datos.prima as never } : {}),
         ...(datos.primaNeta !== undefined ? { primaNeta: datos.primaNeta as never } : {}),
         ...(datos.financiamiento !== undefined
           ? { financiamiento: datos.financiamiento as never }

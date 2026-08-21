@@ -47,6 +47,12 @@ export class ActualizarCobranzaDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
+  prima?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   primaNeta?: number;
 
   @IsOptional()
@@ -82,9 +88,16 @@ export class ActualizarCobranzaDto {
 }
 
 export class MarcarEmitidaDto {
+  // Al emitir se captura el número de serie (VIN) de la unidad. El folio de la
+  // aseguradora es opcional (se captura después en los datos de cobranza).
+  @IsOptional()
   @IsString()
-  @MinLength(3)
-  folio: string;
+  @MinLength(5)
+  serie?: string;
+
+  @IsOptional()
+  @IsString()
+  folio?: string;
 
   @IsOptional()
   @Type(() => Date)

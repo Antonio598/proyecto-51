@@ -19,6 +19,7 @@ function mxn(v: unknown) {
 
 const COBRANZA_VACIA = {
   folio: '',
+  prima: '',
   primaNeta: '',
   financiamiento: '',
   gastosExpedicion: '',
@@ -50,6 +51,7 @@ export default function PolizaDetallePage() {
       setEnlace(p.urlNube ?? '');
       setCobranza({
         folio: p.folio ?? '',
+        prima: p.prima != null ? String(p.prima) : '',
         primaNeta: p.primaNeta != null ? String(p.primaNeta) : '',
         financiamiento: p.financiamiento != null ? String(p.financiamiento) : '',
         gastosExpedicion: p.gastosExpedicion != null ? String(p.gastosExpedicion) : '',
@@ -78,6 +80,7 @@ export default function PolizaDetallePage() {
       () =>
         api.actualizarCobranzaPoliza(id, {
           folio: cobranza.folio || undefined,
+          prima: num(cobranza.prima),
           primaNeta: num(cobranza.primaNeta),
           financiamiento: num(cobranza.financiamiento),
           gastosExpedicion: num(cobranza.gastosExpedicion),
@@ -272,6 +275,15 @@ export default function PolizaDetallePage() {
                 value={poliza.unidad?.folio ?? '—'}
                 disabled
                 className="input bg-slate-50 text-slate-500"
+              />
+            </div>
+            <div>
+              <label className="label">Prima anual</label>
+              <input
+                inputMode="decimal"
+                value={cobranza.prima}
+                onChange={(e) => setCobranza({ ...cobranza, prima: e.target.value })}
+                className="input"
               />
             </div>
             <div>

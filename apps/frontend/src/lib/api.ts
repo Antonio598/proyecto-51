@@ -89,6 +89,24 @@ async function upload<T>(path: string, archivo: File, campos: Record<string, str
   return res.json() as Promise<T>;
 }
 
+/** Descarga un archivo binario (Excel/PDF) con el token y lo guarda en el navegador. */
+async function descargar(path: string, nombreArchivo: string) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/api${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ── Portal público: envío de documentos ──
 
 /** Extensiones de contenido aceptadas (mismas que valida el backend). */
@@ -332,6 +350,7 @@ export const api = {
     }),
   listarClientes: (buscar?: string) =>
     request<any[]>(`/clientes${buscar ? `?buscar=${encodeURIComponent(buscar)}` : ''}`),
+  exportarClientesExcel: () => descargar('/clientes/export', 'clientes-y-flotas.xlsx'),
   obtenerCliente: (id: string) => request<any>(`/clientes/${id}`),
   crearCliente: (data: Record<string, unknown>) =>
     request<any>('/clientes', { method: 'POST', body: JSON.stringify(data) }),
@@ -469,6 +488,10 @@ export const api = {
   procesarEndoso: (archivo: File) => upload<any>('/endosos', archivo),
   aplicarEndoso: (id: string) => request<any>(`/endosos/${id}/aplicar`, { method: 'POST' }),
 
+  // ── Notas de crédito ──
+  listarNotasCredito: () => request<any[]>('/notas-credito'),
+  subirNotaCredito: (archivo: File) => upload<any>('/notas-credito', archivo),
+
   // ── Cobranza ──
   dashboardCobranza: () => request<any>('/cobranza/dashboard'),
   generarDesglose: (clienteId: string) =>
@@ -487,6 +510,11 @@ export const api = {
     request<any>(`/cobranza/madres/${id}/plan`, { method: 'PATCH', body: JSON.stringify(data) }),
   marcarPagadoMadre: (id: string) =>
     request<any>(`/cobranza/madres/${id}/pagar`, { method: 'POST' }),
+  editarVencimientoMadre: (id: string, num: number, fecha: string) =>
+    request<any>(`/cobranza/madres/${id}/parcialidad/${num}/vencimiento`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fecha }),
+    }),
 
   // ── Pagos y conciliación ──
   comprobantesPendientes: () => request<any[]>('/pagos/comprobantes'),

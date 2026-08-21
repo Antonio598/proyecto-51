@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ExcelService } from '../generacion/excel.service';
 import { CreateClienteDto, UpdateClienteDto } from './dto/cliente.dto';
 import { normalizarRfc } from './rfc.util';
 
@@ -10,7 +11,70 @@ export class ClientesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly excel: ExcelService,
   ) {}
+
+  /** Excel con la información de clientes y sus unidades por flota. */
+  async exportarExcel(): Promise<Buffer> {
+    const clientes = await this.prisma.cliente.findMany({
+      orderBy: { razonSocial: 'asc' },
+      include: {
+        flotas: { select: { id: true, nombre: true } },
+        unidades: {
+          where: { activo: true },
+          include: { flota: { select: { nombre: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    const filasClientes = clientes.map((c) => [
+      c.razonSocial,
+      c.rfc ?? '',
+      c.contactoEmail ?? '',
+      c.whatsappNumber ?? '',
+      c.flotas.length,
+      c.unidades.length,
+    ]);
+
+    const filasUnidades = clientes.flatMap((c) =>
+      c.unidades.map((u) => [
+        c.razonSocial,
+        u.flota?.nombre ?? 'Sin flota',
+        u.vin ?? '',
+        u.marca ?? '',
+        u.modelo ?? '',
+        u.anio ?? '',
+        u.placas ?? '',
+        u.valorAsegurado ? Number(u.valorAsegurado) : '',
+      ]),
+    );
+
+    return this.excel.generar([
+      {
+        nombre: 'Clientes',
+        titulo: 'Clientes',
+        encabezados: ['Razón social', 'RFC', 'Correo', 'Teléfono', 'Flotas', 'Unidades'],
+        filas: filasClientes,
+      },
+      {
+        nombre: 'Unidades',
+        titulo: 'Unidades por flota',
+        encabezados: [
+          'Cliente',
+          'Flota',
+          'No. de serie (VIN)',
+          'Marca',
+          'Modelo',
+          'Año',
+          'Placas',
+          'Valor asegurado',
+        ],
+        filas: filasUnidades,
+        columnasMoneda: [7],
+      },
+    ]);
+  }
 
   async listar(buscar?: string) {
     return this.prisma.cliente.findMany({

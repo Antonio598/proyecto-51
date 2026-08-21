@@ -6,6 +6,7 @@ import {
   DIAS_A_PRIMER_PAGO,
   EntradaPlan,
   Parcialidad,
+  diasEntrePagos,
   generarCalendario,
   numeroPagosDe,
   sumarDiasNaturales,
@@ -72,47 +73,67 @@ export class PolizasMadreService {
 
   /** Recalcula los totales consolidados sumando las hijas y refresca el corte abierto. */
   async recalcularTotales(madreId: string) {
-    // Las pólizas canceladas (bajas) no cuentan para el total de la Madre.
-    const hijas = await this.prisma.poliza.findMany({
-      where: { polizaMadreId: madreId, estado: { not: EstadoPoliza.cancelada } },
-    });
-    const suma = (campo: keyof (typeof hijas)[number]) =>
-      hijas.reduce((s, h) => s + num(h[campo] as unknown), 0);
+    const madre = await this.obtener(madreId);
 
-    const primaNeta = suma('primaNeta');
-    const financiamiento = suma('financiamiento');
-    const gastosExpedicion = suma('gastosExpedicion');
-    const iva = suma('iva');
-    let primaTotal = suma('primaTotal');
-    // Si nadie capturó el total, derivarlo de las partes.
-    if (primaTotal <= 0) primaTotal = primaNeta + financiamiento + gastosExpedicion + iva;
-    // Último recurso: la prima anual (comportamiento previo, plan de pagos iguales).
-    if (primaTotal <= 0) primaTotal = suma('prima');
+    // Si los totales se capturaron a mano en la Madre, no se sobreescriben.
+    if (!madre.totalesManual) {
+      // Las pólizas canceladas (bajas) no cuentan para el total de la Madre.
+      const hijas = await this.prisma.poliza.findMany({
+        where: { polizaMadreId: madreId, estado: { not: EstadoPoliza.cancelada } },
+      });
+      const suma = (campo: keyof (typeof hijas)[number]) =>
+        hijas.reduce((s, h) => s + num(h[campo] as unknown), 0);
 
-    await this.prisma.polizaMadre.update({
-      where: { id: madreId },
-      data: {
-        primaNeta: primaNeta as never,
-        financiamiento: financiamiento as never,
-        gastosExpedicion: gastosExpedicion as never,
-        iva: iva as never,
-        primaTotal: primaTotal as never,
-      },
-    });
+      const primaNeta = suma('primaNeta');
+      const financiamiento = suma('financiamiento');
+      const gastosExpedicion = suma('gastosExpedicion');
+      const iva = suma('iva');
+      let primaTotal = suma('primaTotal');
+      // Si nadie capturó el total, derivarlo de las partes.
+      if (primaTotal <= 0) primaTotal = primaNeta + financiamiento + gastosExpedicion + iva;
+      // Último recurso: la prima anual (comportamiento previo, plan de pagos iguales).
+      if (primaTotal <= 0) primaTotal = suma('prima');
+
+      await this.prisma.polizaMadre.update({
+        where: { id: madreId },
+        data: {
+          primaNeta: primaNeta as never,
+          financiamiento: financiamiento as never,
+          gastosExpedicion: gastosExpedicion as never,
+          iva: iva as never,
+          primaTotal: primaTotal as never,
+        },
+      });
+    }
 
     await this.regenerarCorteAbierto(madreId);
   }
 
-  /** Fija periodicidad y/o fecha de emisión, y regenera el calendario. */
+  /**
+   * Edita la Póliza Madre: periodicidad, fecha de emisión y, opcionalmente, los
+   * totales capturados a mano (que entonces dejan de recalcularse por suma de
+   * hijas). Regenera el calendario.
+   */
   async configurarPlan(
     madreId: string,
-    datos: { periodicidad?: Periodicidad; fechaEmision?: Date },
+    datos: {
+      periodicidad?: Periodicidad;
+      fechaEmision?: Date;
+      totalesManual?: boolean;
+      primaNeta?: number;
+      financiamiento?: number;
+      gastosExpedicion?: number;
+      iva?: number;
+      primaTotal?: number;
+    },
     actorUserId: string,
   ) {
     const madre = await this.obtener(madreId);
     const periodicidad = datos.periodicidad ?? madre.periodicidad;
     const fechaEmision = datos.fechaEmision ?? madre.fechaEmision ?? undefined;
     const numeroPagos = numeroPagosDe(periodicidad);
+
+    const dec = (v?: number) => (v !== undefined ? (v as never) : undefined);
 
     await this.prisma.polizaMadre.update({
       where: { id: madreId },
@@ -123,18 +144,52 @@ export class PolizasMadreService {
         primeraFechaPago: fechaEmision
           ? sumarDiasNaturales(fechaEmision, DIAS_A_PRIMER_PAGO)
           : null,
+        ...(datos.totalesManual !== undefined ? { totalesManual: datos.totalesManual } : {}),
+        ...(datos.primaNeta !== undefined ? { primaNeta: dec(datos.primaNeta) } : {}),
+        ...(datos.financiamiento !== undefined ? { financiamiento: dec(datos.financiamiento) } : {}),
+        ...(datos.gastosExpedicion !== undefined
+          ? { gastosExpedicion: dec(datos.gastosExpedicion) }
+          : {}),
+        ...(datos.iva !== undefined ? { iva: dec(datos.iva) } : {}),
+        ...(datos.primaTotal !== undefined ? { primaTotal: dec(datos.primaTotal) } : {}),
       },
     });
 
-    await this.regenerarCorteAbierto(madreId);
+    // Si se apagan los totales manuales, se recalculan desde las hijas.
+    await this.recalcularTotales(madreId);
     await this.audit.registrar({
       entidad: 'PolizaMadre',
       entidadId: madreId,
       accion: 'configurar_plan',
       actorUserId,
-      diff: { periodicidad, fechaEmision: fechaEmision ?? null } as Prisma.InputJsonValue,
+      diff: { ...datos, fechaEmision: fechaEmision ?? null } as unknown as Prisma.InputJsonValue,
     });
     return this.obtener(madreId);
+  }
+
+  /** Edita a mano la fecha de vencimiento de una parcialidad (no se regenera). */
+  async editarVencimiento(
+    madreId: string,
+    numeroParcialidad: number,
+    fecha: Date,
+    actorUserId: string,
+  ) {
+    const corte = await this.prisma.corteMadre.findUnique({
+      where: { polizaMadreId_numeroParcialidad: { polizaMadreId: madreId, numeroParcialidad } },
+    });
+    if (!corte) throw new NotFoundException('Parcialidad no encontrada');
+    const actualizado = await this.prisma.corteMadre.update({
+      where: { id: corte.id },
+      data: { fechaVencimiento: fecha, fechaCorte: fecha, fechaManual: true },
+    });
+    await this.audit.registrar({
+      entidad: 'CorteMadre',
+      entidadId: corte.id,
+      accion: 'editar_vencimiento',
+      actorUserId,
+      diff: { numeroParcialidad, fecha: fecha.toISOString() },
+    });
+    return actualizado;
   }
 
   /**
@@ -306,34 +361,57 @@ export class PolizasMadreService {
     const siguienteNum = parcialidadPagada + 1;
     if (siguienteNum > madre.numeroPagos || siguienteNum > cal.length) return null;
     const p = cal[siguienteNum - 1];
-    return this.upsertParcialidad(madre.id, p);
+    // La fecha se encadena desde la parcialidad recién pagada (respeta ediciones
+    // manuales): siguiente = fecha pagada + días de la periodicidad.
+    const pagada = await this.prisma.corteMadre.findUnique({
+      where: {
+        polizaMadreId_numeroParcialidad: {
+          polizaMadreId: madre.id,
+          numeroParcialidad: parcialidadPagada,
+        },
+      },
+    });
+    const fecha = pagada
+      ? sumarDiasNaturales(pagada.fechaVencimiento, diasEntrePagos(madre.periodicidad))
+      : p.fechaVencimiento;
+    return this.upsertParcialidad(madre.id, p, fecha);
   }
 
-  /** Crea o actualiza (fecha/monto) una parcialidad sin pisar su estado de pago. */
-  private upsertParcialidad(madreId: string, p: Parcialidad) {
-    return this.prisma.corteMadre.upsert({
+  /** Crea o actualiza una parcialidad. No pisa la fecha si es manual. */
+  private async upsertParcialidad(madreId: string, p: Parcialidad, fechaOverride?: Date) {
+    const fecha = fechaOverride ?? p.fechaVencimiento;
+    const periodo = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
+    const existente = await this.prisma.corteMadre.findUnique({
       where: {
         polizaMadreId_numeroParcialidad: {
           polizaMadreId: madreId,
           numeroParcialidad: p.numeroParcialidad,
         },
       },
-      create: {
+    });
+
+    if (existente) {
+      return this.prisma.corteMadre.update({
+        where: { id: existente.id },
+        data: {
+          montoEsperado: p.montoEsperado as never,
+          esPrimerPago: p.esPrimerPago,
+          // Sólo se actualiza la fecha si NO fue editada a mano.
+          ...(existente.fechaManual ? {} : { periodo, fechaCorte: fecha, fechaVencimiento: fecha }),
+        },
+      });
+    }
+
+    return this.prisma.corteMadre.create({
+      data: {
         polizaMadreId: madreId,
         numeroParcialidad: p.numeroParcialidad,
-        periodo: p.periodo,
-        fechaCorte: p.fechaVencimiento,
-        fechaVencimiento: p.fechaVencimiento,
+        periodo,
+        fechaCorte: fecha,
+        fechaVencimiento: fecha,
         montoEsperado: p.montoEsperado as never,
         esPrimerPago: p.esPrimerPago,
         estado: EstadoCobranza.vigente,
-      },
-      update: {
-        periodo: p.periodo,
-        fechaCorte: p.fechaVencimiento,
-        fechaVencimiento: p.fechaVencimiento,
-        montoEsperado: p.montoEsperado as never,
-        esPrimerPago: p.esPrimerPago,
       },
     });
   }

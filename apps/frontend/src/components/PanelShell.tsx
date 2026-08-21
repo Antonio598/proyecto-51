@@ -39,6 +39,7 @@ const NAV: { href: string; label: string; icono: string }[] = [
   { href: '/consulta', label: 'Consulta de vigencia', icono: 'polizas' },
   { href: '/cobranza', label: 'Cobranza', icono: 'cobranza' },
   { href: '/facturas', label: 'Facturas', icono: 'pagos' },
+  { href: '/notas-credito', label: 'Notas de crédito', icono: 'pagos' },
   { href: '/pagos', label: 'Pagos', icono: 'pagos' },
   { href: '/usuarios', label: 'Usuarios', icono: 'usuarios' },
 ];

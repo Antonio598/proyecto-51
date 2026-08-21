@@ -171,6 +171,7 @@ model Cliente {
   polizasMadre PolizaMadre[]
   documentos   Documento[]
   facturas     Factura[]
+  notasCredito NotaCredito[]
 
   @@index([razonSocial])
 }
@@ -446,6 +447,9 @@ model PolizaMadre {
   gastosExpedicion Decimal? @db.Decimal(14, 2)
   iva              Decimal? @db.Decimal(14, 2)
   primaTotal       Decimal? @db.Decimal(14, 2)
+  // Cuando es true, los totales de arriba se capturaron a mano en la Madre y NO
+  // se sobrescriben con la suma de las hijas.
+  totalesManual Boolean      @default(false)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -469,6 +473,8 @@ model CorteMadre {
   fechaVencimiento DateTime       // fecha límite de pago de esta parcialidad
   montoEsperado    Decimal?       @db.Decimal(14, 2)
   esPrimerPago     Boolean        @default(false)
+  // Fecha de vencimiento editada a mano: la regeneración no la sobrescribe.
+  fechaManual      Boolean        @default(false)
   estado           EstadoCobranza @default(vigente)
   pagadoEn         DateTime?
   createdAt        DateTime       @default(now())
@@ -553,12 +559,33 @@ model Factura {
   clienteId          String?
   cliente            Cliente?      @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   tipo               TipoDocumento // factura | complemento
+  uuid               String?       // folio fiscal (UUID) del CFDI, si la IA lo leyó
   storageDocId       String?
   enviadoAlClienteEn DateTime?
   createdAt          DateTime      @default(now())
 
+  notasCredito NotaCredito[]
+
   @@index([polizaId])
   @@index([clienteId])
+  @@index([uuid])
+}
+
+// Nota de crédito: la IA la lee, la liga al cliente por RFC y, si trae el UUID
+// de la factura relacionada, también a esa factura.
+model NotaCredito {
+  id              String    @id @default(cuid())
+  clienteId       String?
+  cliente         Cliente?  @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  facturaId       String?
+  factura         Factura?  @relation(fields: [facturaId], references: [id], onDelete: SetNull)
+  uuidRelacionado String?
+  importe         Decimal?  @db.Decimal(14, 2)
+  storageDocId    String?
+  createdAt       DateTime  @default(now())
+
+  @@index([clienteId])
+  @@index([facturaId])
 }
 
 // Endoso de alta/baja/cancelación, leído por IA de un documento y aplicado tras

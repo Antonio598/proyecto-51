@@ -7,7 +7,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Rol } from '@prisma/client';
 import { ClientesService } from './clientes.service';
 import { UnidadesService } from './unidades.service';
@@ -29,6 +31,18 @@ export class ClientesController {
   @Get()
   listar(@Query('buscar') buscar?: string) {
     return this.clientes.listar(buscar);
+  }
+
+  /** Descarga en Excel de clientes y sus unidades por flota. */
+  @Get('export')
+  async exportar(@Res() res: Response) {
+    const buffer = await this.clientes.exportarExcel();
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="clientes-y-flotas.xlsx"');
+    res.send(buffer);
   }
 
   @Get(':id')

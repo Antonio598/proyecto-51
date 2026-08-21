@@ -95,7 +95,12 @@ export class FacturasService {
     });
 
     const factura = await this.prisma.factura.create({
-      data: { clienteId: cliente.id, tipo, storageDocId: documento.id },
+      data: {
+        clienteId: cliente.id,
+        tipo,
+        uuid: lectura.uuid ?? null,
+        storageDocId: documento.id,
+      },
     });
 
     await this.audit.registrar({

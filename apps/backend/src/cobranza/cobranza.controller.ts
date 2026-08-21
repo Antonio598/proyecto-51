@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDate, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { Periodicidad, Rol } from '@prisma/client';
 import { CobranzaService } from './cobranza.service';
 import { DesgloseService } from './desglose.service';
@@ -30,6 +30,46 @@ class ConfigurarPlanDto {
   @Type(() => Date)
   @IsDate()
   fechaEmision?: Date;
+
+  @IsOptional()
+  @IsBoolean()
+  totalesManual?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  primaNeta?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  financiamiento?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  gastosExpedicion?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  iva?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  primaTotal?: number;
+}
+
+class EditarVencimientoDto {
+  @Type(() => Date)
+  @IsDate()
+  fecha: Date;
 }
 
 @Controller('cobranza')
@@ -71,6 +111,18 @@ export class CobranzaController {
   @Post('madres/:id/pagar')
   marcarPagado(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.polizasMadre.marcarPagado(id, user.userId);
+  }
+
+  /** Edita a mano la fecha de vencimiento de una parcialidad. */
+  @Roles(Rol.administracion, Rol.tecnico, Rol.admin)
+  @Patch('madres/:id/parcialidad/:num/vencimiento')
+  editarVencimiento(
+    @Param('id') id: string,
+    @Param('num') num: string,
+    @Body() dto: EditarVencimientoDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.polizasMadre.editarVencimiento(id, Number(num), dto.fecha, user.userId);
   }
 
   /**

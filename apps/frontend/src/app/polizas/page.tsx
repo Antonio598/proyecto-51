@@ -23,7 +23,7 @@ export default function PolizasPage() {
   const [polizas, setPolizas] = useState<any[]>([]);
   const [checklist, setChecklist] = useState<any>(null);
   const [emitiendo, setEmitiendo] = useState<string | null>(null);
-  const [folio, setFolio] = useState('');
+  const [serieEmision, setSerieEmision] = useState('');
   const [serie, setSerie] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
@@ -57,10 +57,10 @@ export default function PolizasPage() {
     setOcupado(true);
     setError('');
     try {
-      await api.marcarPolizaEmitida(id, { folio });
+      await api.marcarPolizaEmitida(id, { serie: serieEmision });
       setEmitiendo(null);
-      setFolio('');
-      setMensaje('Póliza marcada como emitida. Se abrió su primer corte de cobranza a 30 días.');
+      setSerieEmision('');
+      setMensaje('Póliza emitida. Se registró el número de serie y arrancó su plan de cobranza.');
       await cargar();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
@@ -190,22 +190,25 @@ export default function PolizasPage() {
                       (emitiendo === p.id ? (
                         <>
                           <input
-                            value={folio}
-                            onChange={(e) => setFolio(e.target.value)}
-                            placeholder="Folio del portal"
-                            className="w-36 rounded border border-slate-300 px-2 py-1 text-xs"
+                            value={serieEmision}
+                            onChange={(e) => setSerieEmision(e.target.value.toUpperCase())}
+                            placeholder="Número de serie (VIN)"
+                            className="w-48 rounded border border-slate-300 px-2 py-1 text-xs uppercase"
                           />
                           <button
                             onClick={() => marcarEmitida(p.id)}
-                            disabled={ocupado || folio.length < 3}
+                            disabled={ocupado || serieEmision.length < 5}
                             className="rounded bg-green-700 px-3 py-1.5 text-xs text-white disabled:opacity-50"
                           >
-                            Guardar
+                            Emitir
                           </button>
                         </>
                       ) : (
                         <button
-                          onClick={() => setEmitiendo(p.id)}
+                          onClick={() => {
+                            setEmitiendo(p.id);
+                            setSerieEmision(p.unidad.vin ?? '');
+                          }}
                           className="rounded bg-marca px-3 py-1.5 text-xs text-white"
                         >
                           Emitir

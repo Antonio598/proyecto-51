@@ -568,6 +568,57 @@ export class ClaudeService {
   }
 
   /**
+   * Lee una nota de crédito: RFC del receptor, UUID de la factura relacionada e
+   * importe, para ligarla al cliente y a su factura.
+   */
+  async leerNotaCredito(
+    contenido: Buffer,
+    mime: string,
+  ): Promise<{
+    rfc: string | null;
+    uuid_relacionado: string | null;
+    total: number | null;
+    confianza: number;
+  }> {
+    const respuesta = await this.client.messages.create({
+      model: this.modelo,
+      max_tokens: 4000,
+      system:
+        'Lees notas de crédito / CFDI de egreso mexicanos. Extrae el RFC del RECEPTOR (cliente), el UUID/folio fiscal de la factura relacionada (nodo CFDI Relacionados, si existe) y el total. Si un dato no aparece, devuelve null. No inventes datos.',
+      output_config: {
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: {
+              rfc: { type: ['string', 'null'], description: 'RFC del receptor (cliente)' },
+              uuid_relacionado: {
+                type: ['string', 'null'],
+                description: 'UUID de la factura relacionada',
+              },
+              total: { type: ['number', 'null'] },
+              confianza: { type: 'number', description: 'Confianza global de 0 a 1' },
+            },
+            required: ['rfc', 'uuid_relacionado', 'total', 'confianza'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            this.construirBloqueDocumento(contenido, mime, 'nota-credito'),
+            { type: 'text', text: 'Extrae los datos de esta nota de crédito.' },
+          ],
+        },
+      ],
+    });
+
+    return this.parsearJson(respuesta);
+  }
+
+  /**
    * Redacta los textos narrativos de la propuesta al cliente.
    * Sólo redacta: las cifras las inserta el sistema desde la base de datos,
    * para que el modelo no pueda inventar sumas aseguradas ni primas.

@@ -48,19 +48,22 @@ export function numeroPagosDe(p: Periodicidad): number {
   }
 }
 
-/** Meses entre una parcialidad y la siguiente. */
-export function mesesEntrePagos(p: Periodicidad): number {
+/**
+ * Días naturales entre una parcialidad y la siguiente. El plan cuenta a partir
+ * del primer pago (emisión + 10 días): mensual = 30 días, y así sucesivamente.
+ */
+export function diasEntrePagos(p: Periodicidad): number {
   switch (p) {
     case Periodicidad.de_contado:
       return 0;
     case Periodicidad.mensual:
-      return 1;
+      return 30;
     case Periodicidad.bimestral:
-      return 2;
+      return 60;
     case Periodicidad.trimestral:
-      return 3;
+      return 90;
     default:
-      return 1;
+      return 30;
   }
 }
 
@@ -101,9 +104,9 @@ export function generarCalendario(entrada: EntradaPlan): Parcialidad[] {
   if (primaTotal <= 0 || n <= 0) return [];
 
   const primeraFecha = sumarDiasNaturales(entrada.fechaEmision, DIAS_A_PRIMER_PAGO);
-  const pasoMeses = mesesEntrePagos(entrada.periodicidad);
+  const pasoDias = diasEntrePagos(entrada.periodicidad);
 
-  const fechaDe = (k: number): Date => sumarMeses(primeraFecha, (k - 1) * pasoMeses);
+  const fechaDe = (k: number): Date => sumarDiasNaturales(primeraFecha, (k - 1) * pasoDias);
   const armar = (montos: number[]): Parcialidad[] => {
     // Ajuste de redondeo en la última parcialidad para cuadrar con primaTotal.
     const suma = round2(montos.reduce((s, m) => s + m, 0));
