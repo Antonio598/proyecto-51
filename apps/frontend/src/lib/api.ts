@@ -386,6 +386,18 @@ export const api = {
     request<{ ok: boolean }>(`/clientes/${id}/eliminar`, { method: 'DELETE' }),
   eliminarFlota: (flotaId: string) =>
     request<{ ok: boolean }>(`/clientes/flotas/${flotaId}`, { method: 'DELETE' }),
+  crearFlota: (clienteId: string, nombre: string) =>
+    request<any>(`/clientes/${clienteId}/flotas`, {
+      method: 'POST',
+      body: JSON.stringify({ nombre }),
+    }),
+  moverUnidades: (clienteId: string, flotaId: string | null, unidadIds: string[]) =>
+    request<any>(`/clientes/${clienteId}/flotas/mover`, {
+      method: 'POST',
+      body: JSON.stringify({ flotaId, unidadIds }),
+    }),
+  exportarClienteExcel: (clienteId: string) =>
+    descargar(`/clientes/${clienteId}/export`, 'unidades-cliente.xlsx'),
   listarUnidades: (clienteId: string) => request<any[]>(`/clientes/${clienteId}/unidades`),
   crearUnidad: (clienteId: string, data: Record<string, unknown>) =>
     request<any>(`/clientes/${clienteId}/unidades`, { method: 'POST', body: JSON.stringify(data) }),

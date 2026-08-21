@@ -121,7 +121,44 @@ export class ClientesController {
     return this.unidades.eliminar(unidadId, user.userId);
   }
 
+  /** Descarga en Excel de las unidades del cliente ordenadas por flota. */
+  @Get(':id/export')
+  async exportarCliente(@Param('id') id: string, @Res() res: Response) {
+    const buffer = await this.clientes.exportarExcelCliente(id);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="unidades-cliente.xlsx"');
+    res.send(buffer);
+  }
+
   // ── Flotas ──
+  @Roles(Rol.administracion, Rol.tecnico, Rol.admin)
+  @Post(':id/flotas')
+  crearFlota(
+    @Param('id') clienteId: string,
+    @Body('nombre') nombre: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.clientes.crearFlota(clienteId, nombre, user.userId);
+  }
+
+  /** Traspasa unidades a una flota (o las deja sin flota si flotaId es null). */
+  @Roles(Rol.administracion, Rol.tecnico, Rol.admin)
+  @Post(':id/flotas/mover')
+  moverUnidades(
+    @Param('id') clienteId: string,
+    @Body() body: { flotaId: string | null; unidadIds: string[] },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.clientes.moverUnidades(
+      clienteId,
+      { flotaId: body.flotaId ?? null, unidadIds: body.unidadIds ?? [] },
+      user.userId,
+    );
+  }
+
   @Roles(Rol.administracion, Rol.admin)
   @Delete('flotas/:flotaId')
   eliminarFlota(@Param('flotaId') flotaId: string, @CurrentUser() user: JwtUser) {

@@ -76,6 +76,90 @@ export class ClientesService {
     ]);
   }
 
+  /** Excel de un solo cliente: sus unidades ordenadas por flota. */
+  async exportarExcelCliente(clienteId: string): Promise<Buffer> {
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { id: clienteId },
+      include: {
+        unidades: {
+          where: { activo: true },
+          include: { flota: { select: { nombre: true } } },
+          orderBy: [{ flotaId: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+    const filas = cliente.unidades.map((u) => [
+      u.flota?.nombre ?? 'Sin flota',
+      u.vin ?? '',
+      u.marca ?? '',
+      u.modelo ?? '',
+      u.anio ?? '',
+      u.placas ?? '',
+      u.valorAsegurado ? Number(u.valorAsegurado) : '',
+    ]);
+
+    return this.excel.generar([
+      {
+        nombre: 'Unidades',
+        titulo: `Unidades — ${cliente.razonSocial}`,
+        encabezados: [
+          'Flota',
+          'No. de serie (VIN)',
+          'Marca',
+          'Modelo',
+          'Año',
+          'Placas',
+          'Valor asegurado',
+        ],
+        filas,
+        columnasMoneda: [6],
+      },
+    ]);
+  }
+
+  /** Crea una nueva flota para el cliente. */
+  async crearFlota(clienteId: string, nombre: string, actorUserId?: string) {
+    await this.obtener(clienteId);
+    const flota = await this.prisma.flota.create({ data: { clienteId, nombre } });
+    await this.audit.registrar({
+      entidad: 'Flota',
+      entidadId: flota.id,
+      accion: 'create',
+      actorUserId,
+      diff: { clienteId, nombre },
+    });
+    return flota;
+  }
+
+  /** Traspasa unidades a una flota (o las deja sin flota si flotaId es null). */
+  async moverUnidades(
+    clienteId: string,
+    datos: { flotaId: string | null; unidadIds: string[] },
+    actorUserId?: string,
+  ) {
+    await this.obtener(clienteId);
+    if (datos.flotaId) {
+      const flota = await this.prisma.flota.findFirst({
+        where: { id: datos.flotaId, clienteId },
+      });
+      if (!flota) throw new BadRequestException('La flota no pertenece a este cliente');
+    }
+    const res = await this.prisma.unidad.updateMany({
+      where: { id: { in: datos.unidadIds }, clienteId },
+      data: { flotaId: datos.flotaId },
+    });
+    await this.audit.registrar({
+      entidad: 'Cliente',
+      entidadId: clienteId,
+      accion: 'mover_unidades',
+      actorUserId,
+      diff: { flotaId: datos.flotaId, unidades: res.count },
+    });
+    return { movidas: res.count };
+  }
+
   async listar(buscar?: string) {
     return this.prisma.cliente.findMany({
       where: buscar

@@ -77,6 +77,12 @@ export default function ClienteDetallePage() {
   const [error, setError] = useState('');
   const [desglose, setDesglose] = useState<any>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
+  const [vista, setVista] = useState<'tarjetas' | 'tabla'>('tarjetas');
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [nuevaFlota, setNuevaFlota] = useState('');
+  const [flotaDestino, setFlotaDestino] = useState('');
+  const [avisoFlota, setAvisoFlota] = useState('');
+  const [exportando, setExportando] = useState(false);
   const [nuevaUnidad, setNuevaUnidad] = useState({
     tipo: 'tractocamion',
     vin: '',
@@ -185,6 +191,54 @@ export default function ClienteDetallePage() {
     }
   }
 
+  function toggleUnidad(unidadId: string) {
+    setSeleccion((prev) => {
+      const n = new Set(prev);
+      if (n.has(unidadId)) n.delete(unidadId);
+      else n.add(unidadId);
+      return n;
+    });
+  }
+
+  async function crearFlotaCliente() {
+    if (!nuevaFlota.trim()) return;
+    setAvisoFlota('');
+    try {
+      await api.crearFlota(id, nuevaFlota.trim());
+      setNuevaFlota('');
+      await cargar();
+      setAvisoFlota('Flota creada.');
+    } catch (err) {
+      setAvisoFlota(err instanceof Error ? err.message : 'No se pudo crear la flota');
+    }
+  }
+
+  async function moverSeleccion() {
+    if (seleccion.size === 0) return;
+    setAvisoFlota('');
+    try {
+      const flotaId = flotaDestino === '__none__' || flotaDestino === '' ? null : flotaDestino;
+      await api.moverUnidades(id, flotaId, [...seleccion]);
+      setSeleccion(new Set());
+      await cargar();
+      setAvisoFlota('Unidades movidas.');
+    } catch (err) {
+      setAvisoFlota(err instanceof Error ? err.message : 'No se pudieron mover las unidades');
+    }
+  }
+
+  async function exportarUnidades() {
+    setExportando(true);
+    setAvisoFlota('');
+    try {
+      await api.exportarClienteExcel(id);
+    } catch (err) {
+      setAvisoFlota(err instanceof Error ? err.message : 'No se pudo exportar');
+    } finally {
+      setExportando(false);
+    }
+  }
+
   if (error) return <div className="rounded-lg bg-red-50 px-3 py-2 text-red-700">{error}</div>;
   if (!cliente) return <div className="text-slate-400">Cargando…</div>;
 
@@ -216,12 +270,82 @@ export default function ClienteDetallePage() {
 
       {/* Flota */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-slate-800">Flota ({unidades.length})</h2>
-          <button onClick={() => setMostrarForm((v) => !v)} className="btn-ghost py-1.5">
-            {mostrarForm ? 'Cancelar' : '+ Agregar unidad'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
+              <button
+                onClick={() => setVista('tarjetas')}
+                className={`px-3 py-1.5 ${vista === 'tarjetas' ? 'bg-marca text-white' : 'bg-white text-slate-600'}`}
+              >
+                Tarjetas
+              </button>
+              <button
+                onClick={() => setVista('tabla')}
+                className={`px-3 py-1.5 ${vista === 'tabla' ? 'bg-marca text-white' : 'bg-white text-slate-600'}`}
+              >
+                Tabla
+              </button>
+            </div>
+            <button onClick={exportarUnidades} disabled={exportando} className="btn-ghost py-1.5">
+              {exportando ? 'Generando…' : 'Descargar Excel'}
+            </button>
+            <button onClick={() => setMostrarForm((v) => !v)} className="btn-ghost py-1.5">
+              {mostrarForm ? 'Cancelar' : '+ Agregar unidad'}
+            </button>
+          </div>
         </div>
+
+        {/* Gestión de flotas: crear flota y traspasar unidades seleccionadas */}
+        {unidades.length > 0 && (
+          <div className="space-y-2 rounded-2xl bg-white p-4 text-sm shadow-tarjeta">
+            {avisoFlota && (
+              <div className="rounded bg-slate-50 px-3 py-1.5 text-slate-700">{avisoFlota}</div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-slate-600">Crear flota:</span>
+              <input
+                value={nuevaFlota}
+                onChange={(e) => setNuevaFlota(e.target.value)}
+                placeholder="Nombre de la flota"
+                className="input w-48"
+              />
+              <button onClick={crearFlotaCliente} disabled={!nuevaFlota.trim()} className="btn-primary py-1.5">
+                Crear
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+              <span className="text-slate-600">
+                Mover {seleccion.size} seleccionada(s) a:
+              </span>
+              <select
+                value={flotaDestino}
+                onChange={(e) => setFlotaDestino(e.target.value)}
+                className="input w-48"
+              >
+                <option value="">— elige flota —</option>
+                {(cliente.flotas ?? []).map((f: any) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nombre}
+                  </option>
+                ))}
+                <option value="__none__">Sin flota</option>
+              </select>
+              <button
+                onClick={moverSeleccion}
+                disabled={seleccion.size === 0 || flotaDestino === ''}
+                className="btn-primary py-1.5"
+              >
+                Mover
+              </button>
+              {seleccion.size > 0 && (
+                <button onClick={() => setSeleccion(new Set())} className="btn-ghost py-1.5">
+                  Limpiar selección
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {mostrarForm && (
           <form onSubmit={agregarUnidad} className="flex flex-wrap gap-2 rounded-2xl bg-white p-4 shadow-tarjeta">
@@ -281,6 +405,64 @@ export default function ClienteDetallePage() {
             Sin unidades registradas. Los documentos aprobados desde la bandeja agregan unidades
             (y sus flotas) aquí automáticamente.
           </div>
+        ) : vista === 'tabla' ? (
+          <div className="space-y-5">
+            {agruparPorFlota(unidades).map(([flota, delGrupo]) => {
+              const flotaId = delGrupo[0]?.flota?.id as string | undefined;
+              return (
+                <div key={flota}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-700">{flota}</h3>
+                    <span className="badge bg-marca-suave text-marca">{delGrupo.length}</span>
+                    {puedeEliminar && flotaId && (
+                      <button
+                        onClick={() => eliminarFlota(flotaId, flota)}
+                        className="text-xs text-slate-400 hover:text-red-600"
+                      >
+                        Eliminar flota
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto rounded-2xl bg-white shadow-tarjeta">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
+                        <tr>
+                          <th className="px-3 py-2"></th>
+                          <th className="px-3 py-2">Unidad</th>
+                          <th className="px-3 py-2">VIN</th>
+                          <th className="px-3 py-2">Año</th>
+                          <th className="px-3 py-2">Placas</th>
+                          <th className="px-3 py-2">Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {delGrupo.map((u) => (
+                          <tr key={u.id}>
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                checked={seleccion.has(u.id)}
+                                onChange={() => toggleUnidad(u.id)}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              {[u.marca, u.modelo].filter(Boolean).join(' ') || u.descripcion || '—'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-500">{u.vin ?? '—'}</td>
+                            <td className="px-3 py-2">{u.anio ?? '—'}</td>
+                            <td className="px-3 py-2">{u.placas ?? '—'}</td>
+                            <td className="px-3 py-2">
+                              {u.valorAsegurado ? moneda(u.valorAsegurado) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="space-y-5">
             {agruparPorFlota(unidades).map(([flota, delGrupo]) => {
@@ -313,7 +495,14 @@ export default function ClienteDetallePage() {
                       <div key={u.id} className="rounded-2xl bg-white p-4 shadow-tarjeta">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="truncate font-medium text-slate-800">{titulo}</div>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={seleccion.has(u.id)}
+                                onChange={() => toggleUnidad(u.id)}
+                              />
+                              <span className="truncate font-medium text-slate-800">{titulo}</span>
+                            </label>
                             {u.valorAsegurado && (
                               <div className="text-sm text-marca">{moneda(u.valorAsegurado)}</div>
                             )}
