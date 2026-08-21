@@ -33,8 +33,10 @@ export default function LoginPage() {
         <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/5" />
         <div className="absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-white/5" />
         <div className="relative">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/marca/arc-blanco.png" alt="ARC soluciones" className="h-12 w-auto" />
+          <div className="inline-block rounded-xl bg-white p-3 shadow-sm">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/marca/arc-navy.png" alt="ARC soluciones" className="h-10 w-auto" />
+          </div>
         </div>
         <div className="relative max-w-md">
           <h2 className="text-3xl font-semibold leading-tight">

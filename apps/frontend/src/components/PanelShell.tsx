@@ -134,9 +134,11 @@ export default function PanelShell({ children }: { children: React.ReactNode }) 
       {/* Sidebar de escritorio */}
       <aside className="hidden w-64 shrink-0 flex-col bg-gradient-to-b from-marca to-marca-oscuro text-white lg:flex">
         <div className="px-5 py-5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/marca/arc-blanco.png" alt="ARC soluciones" className="h-10 w-auto" />
-          <div className="mt-1.5 text-[11px] text-white/60">Seguros de flotas de transporte</div>
+          <div className="inline-block rounded-lg bg-white p-2 shadow-sm">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/marca/arc-navy.png" alt="ARC soluciones" className="h-8 w-auto" />
+          </div>
+          <div className="mt-2 text-[11px] text-white/60">Seguros de flotas de transporte</div>
         </div>
         <div className="flex-1 px-3">{Navegacion}</div>
         <div className="px-3 pb-4">
@@ -152,8 +154,10 @@ export default function PanelShell({ children }: { children: React.ReactNode }) 
         <div className="fixed inset-0 z-30 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMenuMovil(false)} />
           <aside className="absolute left-0 top-0 flex h-full w-64 flex-col bg-gradient-to-b from-marca to-marca-oscuro px-3 py-5 text-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/marca/arc-blanco.png" alt="ARC soluciones" className="mb-4 h-9 w-auto px-2" />
+            <div className="mb-4 inline-block rounded-lg bg-white p-2 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/marca/arc-navy.png" alt="ARC soluciones" className="h-7 w-auto" />
+            </div>
             {Navegacion}
           </aside>
         </div>
