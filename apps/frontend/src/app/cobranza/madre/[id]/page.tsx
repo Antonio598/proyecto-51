@@ -165,6 +165,7 @@ export default function MadreDetallePage() {
         <h1 className="mt-1 text-xl font-semibold">Póliza Madre · {madre.cliente.razonSocial}</h1>
         <p className="text-sm text-slate-500">
           {madre.aseguradora.nombre}
+          {madre.flota ? ` · Flota ${madre.flota.nombre}` : ''}
           {madre.cliente.rfc ? ` · RFC ${madre.cliente.rfc}` : ''} · {madre.hijas.length} póliza(s)
           hija(s)
         </p>

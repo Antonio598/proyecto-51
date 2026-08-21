@@ -51,6 +51,7 @@ export default function RevisionPage() {
 
   const [documento, setDocumento] = useState<any>(null);
   const [unidades, setUnidades] = useState<UnidadForm[]>([]);
+  const [flotaBulk, setFlotaBulk] = useState('');
   const [camposDudosos, setCamposDudosos] = useState<string[][]>([]);
   const [notas, setNotas] = useState('');
   const [clientes, setClientes] = useState<any[]>([]);
@@ -303,6 +304,29 @@ export default function RevisionPage() {
                 Todos los campos con confianza alta
               </span>
             )}
+          </div>
+
+          {/* Asignar flota en bloque: cada flota se cobra por separado en cobranza. */}
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 text-sm shadow">
+            <span className="text-slate-600">Dividir por flotas:</span>
+            <input
+              value={flotaBulk}
+              onChange={(e) => setFlotaBulk(e.target.value)}
+              placeholder="Nombre de la flota"
+              className="rounded border border-slate-300 px-2 py-1.5"
+            />
+            <button
+              onClick={() =>
+                setUnidades((prev) => prev.map((u) => ({ ...u, flotaNombre: flotaBulk })))
+              }
+              disabled={!flotaBulk.trim()}
+              className="rounded bg-marca px-3 py-1.5 text-xs text-white disabled:opacity-50"
+            >
+              Aplicar a todas
+            </button>
+            <span className="text-xs text-slate-400">
+              o edita el campo “Flota” en cada unidad. Cada flota tendrá su propia cobranza.
+            </span>
           </div>
 
           <div className="space-y-4">

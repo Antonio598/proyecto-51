@@ -30,25 +30,49 @@ export class PolizasMadreService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Find-or-create de la Madre por (cliente, aseguradora). */
-  async asegurarMadre(clienteId: string, aseguradoraId: string) {
-    return this.prisma.polizaMadre.upsert({
-      where: { clienteId_aseguradoraId: { clienteId, aseguradoraId } },
-      create: { clienteId, aseguradoraId },
-      update: {},
+  /** Find-or-create de la Madre por (cliente, flota, aseguradora). */
+  async asegurarMadre(clienteId: string, aseguradoraId: string, flotaId: string | null) {
+    const existente = await this.prisma.polizaMadre.findFirst({
+      where: { clienteId, aseguradoraId, flotaId },
     });
+    if (existente) return existente;
+    return this.prisma.polizaMadre.create({ data: { clienteId, aseguradoraId, flotaId } });
+  }
+
+  /** Flota "General" del cliente (se crea si no existe) para unidades sin flota. */
+  private async flotaGeneral(clienteId: string) {
+    const existente = await this.prisma.flota.findFirst({
+      where: { clienteId, nombre: 'General' },
+    });
+    if (existente) return existente;
+    return this.prisma.flota.create({ data: { clienteId, nombre: 'General' } });
   }
 
   /**
-   * Vincula una póliza a la Madre de su (cliente, aseguradora) y recalcula
-   * los totales. Si `fechaEmision` viene y la Madre aún no la tenía, fija el
-   * ancla del plan (primera emisión) y abre la primera parcialidad.
+   * Vincula una póliza a la Madre de su (cliente, flota, aseguradora) y recalcula
+   * los totales. Cada flota se cobra por separado; si la unidad no tiene flota,
+   * se asigna a la flota "General" del cliente. Si `fechaEmision` viene y la
+   * Madre aún no la tenía, fija el ancla del plan y abre la primera parcialidad.
    */
   async vincularHija(polizaId: string, opciones: { fechaEmision?: Date } = {}) {
-    const poliza = await this.prisma.poliza.findUnique({ where: { id: polizaId } });
+    const poliza = await this.prisma.poliza.findUnique({
+      where: { id: polizaId },
+      include: { unidad: { select: { id: true, flotaId: true } } },
+    });
     if (!poliza) return null;
 
-    const madre = await this.asegurarMadre(poliza.clienteId, poliza.aseguradoraId);
+    // Resuelve la flota de la unidad (o la crea como "General").
+    let flotaId = poliza.unidad.flotaId;
+    if (!flotaId) {
+      const general = await this.flotaGeneral(poliza.clienteId);
+      flotaId = general.id;
+      await this.prisma.unidad.update({
+        where: { id: poliza.unidad.id },
+        data: { flotaId },
+      });
+    }
+
+    const madre = await this.asegurarMadre(poliza.clienteId, poliza.aseguradoraId, flotaId);
     if (poliza.polizaMadreId !== madre.id) {
       await this.prisma.poliza.update({
         where: { id: polizaId },
@@ -257,6 +281,7 @@ export class PolizasMadreService {
       include: {
         cliente: { select: { id: true, razonSocial: true, rfc: true, contactoEmail: true } },
         aseguradora: { select: { id: true, nombre: true } },
+        flota: { select: { id: true, nombre: true } },
         hijas: {
           orderBy: { createdAt: 'asc' },
           include: { unidad: { select: { vin: true, marca: true, modelo: true } } },
@@ -283,6 +308,7 @@ export class PolizasMadreService {
       include: {
         cliente: { select: { id: true, razonSocial: true } },
         aseguradora: { select: { nombre: true } },
+        flota: { select: { nombre: true } },
         _count: { select: { hijas: true } },
         cortes: {
           where: { estado: { not: EstadoCobranza.pagado } },

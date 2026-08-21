@@ -188,7 +188,8 @@ model Flota {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  unidades Unidad[]
+  unidades     Unidad[]
+  polizasMadre PolizaMadre[]
 
   @@index([clienteId])
 }
@@ -435,6 +436,10 @@ model PolizaMadre {
   id            String       @id @default(cuid())
   clienteId     String
   cliente       Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  // Cada flota se cobra por separado: la Madre agrupa por (cliente, flota,
+  // aseguradora). Puede ser null en cobranzas previas al agrupado por flota.
+  flotaId       String?
+  flota         Flota?       @relation(fields: [flotaId], references: [id], onDelete: SetNull)
   aseguradoraId String
   aseguradora   Aseguradora  @relation(fields: [aseguradoraId], references: [id])
   periodicidad  Periodicidad @default(mensual)
@@ -456,8 +461,9 @@ model PolizaMadre {
   hijas  Poliza[]
   cortes CorteMadre[]
 
-  @@unique([clienteId, aseguradoraId])
+  @@unique([clienteId, flotaId, aseguradoraId])
   @@index([clienteId])
+  @@index([flotaId])
 }
 
 // Una parcialidad del plan de pagos de la Madre. Reemplaza a Corte (por póliza)

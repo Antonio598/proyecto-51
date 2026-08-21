@@ -116,7 +116,10 @@ export default function CobranzaPage() {
             <tbody>
               {cortes.map((c: any) => (
                 <tr key={c.id} className="border-t">
-                  <td className="px-3 py-2">{c.cliente.razonSocial}</td>
+                  <td className="px-3 py-2">
+                    {c.cliente.razonSocial}
+                    {c.flota && <div className="text-xs text-slate-400">Flota: {c.flota}</div>}
+                  </td>
                   <td className="px-3 py-2">{c.aseguradora}</td>
                   <td className="px-3 py-2">
                     {c.periodo} · parcialidad {c.numeroParcialidad}

@@ -26,6 +26,7 @@ export class CobranzaService {
           include: {
             cliente: { select: { id: true, razonSocial: true, whatsappNumber: true } },
             aseguradora: { select: { nombre: true } },
+            flota: { select: { nombre: true } },
           },
         },
       },
@@ -129,6 +130,7 @@ export class CobranzaService {
         montoEsperado: c.montoEsperado,
         cliente: c.polizaMadre.cliente,
         aseguradora: c.polizaMadre.aseguradora.nombre,
+        flota: c.polizaMadre.flota?.nombre ?? null,
       })),
     };
   }
