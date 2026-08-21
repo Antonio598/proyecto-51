@@ -62,6 +62,22 @@ function valorMostrable(u: Record<string, unknown>, campo: { key: string; fmt?: 
   return v != null && v !== '' ? String(v) : null;
 }
 
+/** Valor SIEMPRE mostrable: devuelve "—" cuando el dato no existe (nunca se oculta). */
+function valorTexto(u: Record<string, unknown>, campo: { key: string; fmt?: Fmt }) {
+  const v = u[campo.key];
+  if (campo.fmt === 'bool') return v ? 'Sí' : 'No';
+  if (campo.fmt === 'moneda') return moneda(v) ?? '—';
+  return v != null && v !== '' ? String(v) : '—';
+}
+
+/** Lista completa de campos para la vista de tabla (todos, aunque estén vacíos). */
+const CAMPOS_TABLA: Array<{ key: string; label: string; fmt?: Fmt }> = [
+  { key: 'tipo', label: 'Tipo' },
+  { key: 'marca', label: 'Marca' },
+  { key: 'modelo', label: 'Modelo' },
+  ...CAMPOS_UNIDAD,
+];
+
 export default function ClienteDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -428,11 +444,11 @@ export default function ClienteDetallePage() {
                       <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
                         <tr>
                           <th className="px-3 py-2"></th>
-                          <th className="px-3 py-2">Unidad</th>
-                          <th className="px-3 py-2">VIN</th>
-                          <th className="px-3 py-2">Año</th>
-                          <th className="px-3 py-2">Placas</th>
-                          <th className="px-3 py-2">Valor</th>
+                          {CAMPOS_TABLA.map((c) => (
+                            <th key={c.key} className="whitespace-nowrap px-3 py-2">
+                              {c.label}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -445,15 +461,11 @@ export default function ClienteDetallePage() {
                                 onChange={() => toggleUnidad(u.id)}
                               />
                             </td>
-                            <td className="px-3 py-2">
-                              {[u.marca, u.modelo].filter(Boolean).join(' ') || u.descripcion || '—'}
-                            </td>
-                            <td className="px-3 py-2 text-slate-500">{u.vin ?? '—'}</td>
-                            <td className="px-3 py-2">{u.anio ?? '—'}</td>
-                            <td className="px-3 py-2">{u.placas ?? '—'}</td>
-                            <td className="px-3 py-2">
-                              {u.valorAsegurado ? moneda(u.valorAsegurado) : '—'}
-                            </td>
+                            {CAMPOS_TABLA.map((c) => (
+                              <td key={c.key} className="whitespace-nowrap px-3 py-2">
+                                {valorTexto(u, c)}
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>
@@ -489,8 +501,8 @@ export default function ClienteDetallePage() {
                       (u.folio ? `Unidad ${u.folio}` : `Unidad ${i + 1}`);
                     const campos = CAMPOS_UNIDAD.map((c) => ({
                       label: c.label,
-                      valor: valorMostrable(u, c),
-                    })).filter((c) => c.valor != null);
+                      valor: valorTexto(u, c),
+                    }));
                     return (
                       <div key={u.id} className="rounded-2xl bg-white p-4 shadow-tarjeta">
                         <div className="flex items-start justify-between gap-2">

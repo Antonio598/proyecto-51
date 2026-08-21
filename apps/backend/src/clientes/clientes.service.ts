@@ -90,14 +90,23 @@ export class ClientesService {
     });
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
+    const dash = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : (v as string));
     const filas = cliente.unidades.map((u) => [
       u.flota?.nombre ?? 'Sin flota',
-      u.vin ?? '',
-      u.marca ?? '',
-      u.modelo ?? '',
-      u.anio ?? '',
-      u.placas ?? '',
-      u.valorAsegurado ? Number(u.valorAsegurado) : '',
+      dash(u.tipo),
+      dash(u.marca),
+      dash(u.modelo),
+      dash(u.descripcion),
+      dash(u.anio),
+      dash(u.vin),
+      dash(u.numeroEconomico),
+      dash(u.placas),
+      dash(u.numeroMotor),
+      dash(u.tipoCobertura),
+      dash(u.tipoCarga),
+      dash(u.usoUnidad),
+      u.dobleRemolque ? 'Sí' : 'No',
+      u.valorAsegurado ? Number(u.valorAsegurado) : '—',
     ]);
 
     return this.excel.generar([
@@ -106,15 +115,23 @@ export class ClientesService {
         titulo: `Unidades — ${cliente.razonSocial}`,
         encabezados: [
           'Flota',
-          'No. de serie (VIN)',
+          'Tipo',
           'Marca',
           'Modelo',
+          'Descripción',
           'Año',
+          'No. de serie (VIN)',
+          'No. económico',
           'Placas',
+          'No. de motor',
+          'Cobertura',
+          'Tipo de carga',
+          'Uso',
+          'Doble remolque',
           'Valor asegurado',
         ],
         filas,
-        columnasMoneda: [6],
+        columnasMoneda: [14],
       },
     ]);
   }
