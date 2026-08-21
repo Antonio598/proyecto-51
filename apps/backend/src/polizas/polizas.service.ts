@@ -45,11 +45,16 @@ export class PolizasService {
     aseguradoraId: string,
     vigenciaInicio: Date,
     actorUserId: string,
+    flotaId?: string,
   ) {
     const expediente = await this.prisma.expediente.findUnique({
       where: { id: expedienteId },
       include: {
-        cliente: { include: { unidades: { where: { activo: true } } } },
+        cliente: {
+          include: {
+            unidades: { where: { activo: true, ...(flotaId ? { flotaId } : {}) } },
+          },
+        },
         propuestasAseguradora: { where: { aseguradoraId } },
         polizas: true,
       },
@@ -128,13 +133,17 @@ export class PolizasService {
    */
   async crearDesdeEnlace(
     expedienteId: string,
-    datos: { aseguradoraId: string; urlNube: string; vigenciaInicio?: Date },
+    datos: { aseguradoraId: string; urlNube: string; vigenciaInicio?: Date; flotaId?: string },
     actorUserId: string,
   ) {
     const expediente = await this.prisma.expediente.findUnique({
       where: { id: expedienteId },
       include: {
-        cliente: { include: { unidades: { where: { activo: true } } } },
+        cliente: {
+          include: {
+            unidades: { where: { activo: true, ...(datos.flotaId ? { flotaId: datos.flotaId } : {}) } },
+          },
+        },
         propuestasAseguradora: { where: { aseguradoraId: datos.aseguradoraId } },
         polizas: true,
       },

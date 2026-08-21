@@ -32,7 +32,13 @@ export class ExpedientesService {
       where: { id },
       include: {
         cliente: {
-          select: { id: true, razonSocial: true, whatsappNumber: true, contactoEmail: true },
+          select: {
+            id: true,
+            razonSocial: true,
+            whatsappNumber: true,
+            contactoEmail: true,
+            flotas: { select: { id: true, nombre: true }, orderBy: { nombre: 'asc' } },
+          },
         },
         propuestasAseguradora: {
           include: { aseguradora: true },

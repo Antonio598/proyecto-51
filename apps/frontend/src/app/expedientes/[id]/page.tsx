@@ -43,6 +43,7 @@ export default function ExpedienteDetallePage() {
     () => new Date().toISOString().slice(0, 10),
   );
   const [urlNubePoliza, setUrlNubePoliza] = useState('');
+  const [flotaElegida, setFlotaElegida] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -471,9 +472,25 @@ export default function ExpedienteDetallePage() {
         <section className="space-y-3 rounded-lg bg-white p-4 shadow">
           <h2 className="font-semibold">Emisión de pólizas</h2>
           <p className="text-sm text-slate-500">
-            Crea una póliza por unidad y genera el checklist de captura para el portal.
+            Crea una póliza por unidad y genera el checklist de captura para el portal. Puedes
+            emitir por flota (cada flota se cobra por separado) o todas las unidades.
           </p>
           <div className="flex flex-wrap items-end gap-3">
+            <div className="w-44">
+              <label className="block text-xs font-medium text-slate-600">Flota</label>
+              <select
+                value={flotaElegida}
+                onChange={(e) => setFlotaElegida(e.target.value)}
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Todas las unidades</option>
+                {(exp.cliente.flotas ?? []).map((f: any) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="w-44">
               <label className="block text-xs font-medium text-slate-600">Inicio de vigencia</label>
               <input
@@ -490,6 +507,7 @@ export default function ExpedienteDetallePage() {
                     api.prepararEmision(id, {
                       aseguradoraId: aseguradoraElegida,
                       vigenciaInicio: new Date(vigenciaInicio).toISOString(),
+                      ...(flotaElegida ? { flotaId: flotaElegida } : {}),
                     }),
                   'Pólizas preparadas. Revísalas en la sección Pólizas para capturarlas en el portal.',
                 )
@@ -536,6 +554,21 @@ export default function ExpedienteDetallePage() {
               </select>
             </div>
             <div className="w-44">
+              <label className="label">Flota</label>
+              <select
+                value={flotaElegida}
+                onChange={(e) => setFlotaElegida(e.target.value)}
+                className="input"
+              >
+                <option value="">Todas las unidades</option>
+                {(exp.cliente.flotas ?? []).map((f: any) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-44">
               <label className="label">Inicio de vigencia (opcional)</label>
               <input
                 type="date"
@@ -565,6 +598,7 @@ export default function ExpedienteDetallePage() {
                         ...(vigenciaInicio
                           ? { vigenciaInicio: new Date(vigenciaInicio).toISOString() }
                           : {}),
+                        ...(flotaElegida ? { flotaId: flotaElegida } : {}),
                       })
                       .then(() => setUrlNubePoliza('')),
                   'Pólizas registradas con su liga. Revísalas en Pólizas para emitirlas.',

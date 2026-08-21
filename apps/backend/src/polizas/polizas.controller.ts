@@ -83,6 +83,7 @@ export class PolizasController {
       dto.aseguradoraId,
       dto.vigenciaInicio,
       user.userId,
+      dto.flotaId,
     );
   }
 
@@ -96,7 +97,12 @@ export class PolizasController {
   ) {
     return this.polizas.crearDesdeEnlace(
       expedienteId,
-      { aseguradoraId: dto.aseguradoraId, urlNube: dto.urlNube, vigenciaInicio: dto.vigenciaInicio },
+      {
+        aseguradoraId: dto.aseguradoraId,
+        urlNube: dto.urlNube,
+        vigenciaInicio: dto.vigenciaInicio,
+        flotaId: dto.flotaId,
+      },
       user.userId,
     );
   }

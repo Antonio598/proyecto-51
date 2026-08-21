@@ -18,6 +18,11 @@ export class PrepararEmisionDto {
   @Type(() => Date)
   @IsDate()
   vigenciaInicio: Date;
+
+  // Emisión por flota: si viene, sólo se emiten las unidades de esa flota.
+  @IsOptional()
+  @IsString()
+  flotaId?: string;
 }
 
 export class CrearPorEnlaceDto {
@@ -31,6 +36,10 @@ export class CrearPorEnlaceDto {
   @Type(() => Date)
   @IsDate()
   vigenciaInicio?: Date;
+
+  @IsOptional()
+  @IsString()
+  flotaId?: string;
 }
 
 export class ActualizarEnlaceDto {

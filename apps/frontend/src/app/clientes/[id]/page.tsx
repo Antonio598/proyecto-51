@@ -97,6 +97,7 @@ export default function ClienteDetallePage() {
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [nuevaFlota, setNuevaFlota] = useState('');
   const [flotaDestino, setFlotaDestino] = useState('');
+  const [flotasAbiertas, setFlotasAbiertas] = useState<Set<string>>(new Set());
   const [avisoFlota, setAvisoFlota] = useState('');
   const [exportando, setExportando] = useState(false);
   const [nuevaUnidad, setNuevaUnidad] = useState({
@@ -205,6 +206,15 @@ export default function ClienteDetallePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo eliminar la flota');
     }
+  }
+
+  function toggleFlota(nombre: string) {
+    setFlotasAbiertas((prev) => {
+      const n = new Set(prev);
+      if (n.has(nombre)) n.delete(nombre);
+      else n.add(nombre);
+      return n;
+    });
   }
 
   function toggleUnidad(unidadId: string) {
@@ -428,8 +438,16 @@ export default function ClienteDetallePage() {
               return (
                 <div key={flota}>
                   <div className="mb-2 flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-slate-700">{flota}</h3>
-                    <span className="badge bg-marca-suave text-marca">{delGrupo.length}</span>
+                    <button
+                      onClick={() => toggleFlota(flota)}
+                      className="flex items-center gap-2 text-sm font-semibold text-slate-700"
+                    >
+                      <span className="text-slate-400">
+                        {flotasAbiertas.has(flota) ? '▾' : '▸'}
+                      </span>
+                      {flota}
+                      <span className="badge bg-marca-suave text-marca">{delGrupo.length}</span>
+                    </button>
                     {puedeEliminar && flotaId && (
                       <button
                         onClick={() => eliminarFlota(flotaId, flota)}
@@ -439,6 +457,7 @@ export default function ClienteDetallePage() {
                       </button>
                     )}
                   </div>
+                  {flotasAbiertas.has(flota) && (
                   <div className="overflow-x-auto rounded-2xl bg-white shadow-tarjeta">
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
@@ -471,6 +490,7 @@ export default function ClienteDetallePage() {
                       </tbody>
                     </table>
                   </div>
+                  )}
                 </div>
               );
             })}
@@ -482,8 +502,16 @@ export default function ClienteDetallePage() {
               return (
               <div key={flota}>
                 <div className="mb-2 flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-700">{flota}</h3>
-                  <span className="badge bg-marca-suave text-marca">{delGrupo.length}</span>
+                  <button
+                    onClick={() => toggleFlota(flota)}
+                    className="flex items-center gap-2 text-sm font-semibold text-slate-700"
+                  >
+                    <span className="text-slate-400">
+                      {flotasAbiertas.has(flota) ? '▾' : '▸'}
+                    </span>
+                    {flota}
+                    <span className="badge bg-marca-suave text-marca">{delGrupo.length}</span>
+                  </button>
                   {puedeEliminar && flotaId && (
                     <button
                       onClick={() => eliminarFlota(flotaId, flota)}
@@ -493,6 +521,7 @@ export default function ClienteDetallePage() {
                     </button>
                   )}
                 </div>
+                {flotasAbiertas.has(flota) && (
                 <div className="grid gap-3 lg:grid-cols-2">
                   {delGrupo.map((u, i) => {
                     const titulo =
@@ -549,6 +578,7 @@ export default function ClienteDetallePage() {
                     );
                   })}
                 </div>
+                )}
               </div>
               );
             })}

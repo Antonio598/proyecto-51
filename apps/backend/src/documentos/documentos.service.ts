@@ -243,9 +243,10 @@ export class DocumentosService {
         if (!clienteRazonSocial && resultado.cliente?.razonSocial?.trim()) {
           clienteRazonSocial = resultado.cliente.razonSocial.trim();
         }
-        const flotaPorArchivo = this.baseNombre(archivo.nombre);
+        // No se inventa flota a partir del nombre del archivo: las flotas las
+        // crea el administrador. Sólo se conserva la flota si la IA la leyó.
         for (const u of resultado.unidades) {
-          unidades.push({ ...u, flotaNombre: u.flotaNombre?.trim() || flotaPorArchivo });
+          unidades.push({ ...u, flotaNombre: u.flotaNombre?.trim() || null });
         }
         if (resultado.notas?.trim()) {
           notas.push(
@@ -404,29 +405,14 @@ export class DocumentosService {
     // Puede haber miles de unidades: se precarga todo y se usa createMany para
     // no hacer 2 consultas por unidad (lo que reventaba el tiempo de transacción).
 
-    // 1. Flotas del cliente; crear de golpe las que falten.
+    // 1. Flotas del cliente. NO se crean flotas automáticamente: las crea el
+    //    administrador. Sólo se asigna la unidad si su flota ya existe por nombre;
+    //    si no, queda sin flota y el admin la organiza en el perfil del cliente.
     const flotasExistentes = await this.prisma.flota.findMany({
       where: { clienteId },
       select: { id: true, nombre: true },
     });
     const flotaPorNombre = new Map(flotasExistentes.map((f) => [f.nombre, f.id]));
-    const nombresNuevos = [
-      ...new Set(
-        unidadesCorregidas
-          .map((u) => (u.flotaNombre ?? '').trim())
-          .filter((n) => n && !flotaPorNombre.has(n)),
-      ),
-    ];
-    if (nombresNuevos.length > 0) {
-      await this.prisma.flota.createMany({
-        data: nombresNuevos.map((nombre) => ({ clienteId, nombre })),
-      });
-      const recargadas = await this.prisma.flota.findMany({
-        where: { clienteId, nombre: { in: nombresNuevos } },
-        select: { id: true, nombre: true },
-      });
-      for (const f of recargadas) flotaPorNombre.set(f.nombre, f.id);
-    }
 
     // 2. Unidades existentes del cliente, para deduplicar por VIN / económico / folio.
     const existentes = await this.prisma.unidad.findMany({
