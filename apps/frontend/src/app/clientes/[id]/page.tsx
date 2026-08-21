@@ -323,12 +323,34 @@ export default function ClienteDetallePage() {
         </div>
 
         {/* Gestión de flotas: crear flota y traspasar unidades seleccionadas */}
-        {unidades.length > 0 && (
+        {(unidades.length > 0 || (cliente.flotas ?? []).length > 0) && (
           <div className="space-y-2 rounded-2xl bg-white p-4 text-sm shadow-tarjeta">
             {avisoFlota && (
               <div className="rounded bg-slate-50 px-3 py-1.5 text-slate-700">{avisoFlota}</div>
             )}
-            <div className="flex flex-wrap items-center gap-2">
+            {(cliente.flotas ?? []).length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 pb-2">
+                <span className="text-slate-600">Flotas:</span>
+                {cliente.flotas.map((f: any) => (
+                  <span
+                    key={f.id}
+                    className="flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs"
+                  >
+                    {f.nombre}
+                    {puedeEliminar && (
+                      <button
+                        onClick={() => eliminarFlota(f.id, f.nombre)}
+                        className="text-slate-400 hover:text-red-600"
+                        title="Eliminar flota"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
               <span className="text-slate-600">Crear flota:</span>
               <input
                 value={nuevaFlota}

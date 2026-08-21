@@ -21,6 +21,7 @@ export class UnidadesService {
     return this.prisma.unidad.findMany({
       where: { clienteId },
       orderBy: { createdAt: 'asc' },
+      include: { flota: { select: { id: true, nombre: true } } },
     });
   }
 

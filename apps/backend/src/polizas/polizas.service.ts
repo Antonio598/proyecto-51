@@ -253,7 +253,15 @@ export class PolizasService {
       orderBy: { createdAt: 'desc' },
       include: {
         cliente: { select: { id: true, razonSocial: true } },
-        unidad: { select: { id: true, vin: true, marca: true, modelo: true } },
+        unidad: {
+          select: {
+            id: true,
+            vin: true,
+            marca: true,
+            modelo: true,
+            flota: { select: { id: true, nombre: true } },
+          },
+        },
         aseguradora: { select: { id: true, nombre: true } },
       },
     });
