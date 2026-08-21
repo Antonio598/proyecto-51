@@ -41,9 +41,12 @@ export default function PortalPage() {
       {/* Encabezado con marca */}
       <header className="bg-gradient-to-br from-marca to-marca-oscuro text-white">
         <div className="mx-auto max-w-3xl px-4 py-10 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-xl font-bold">
-            S
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/marca/arc-blanco.png"
+            alt="ARC soluciones"
+            className="mx-auto mb-5 h-12 w-auto"
+          />
           <h1 className="text-2xl font-semibold">Portal de clientes</h1>
           <p className="mx-auto mt-2 max-w-md text-sm text-white/70">
             Envía tus documentos y consulta la información de tu seguro de forma segura.

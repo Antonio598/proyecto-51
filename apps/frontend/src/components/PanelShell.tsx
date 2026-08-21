@@ -133,14 +133,10 @@ export default function PanelShell({ children }: { children: React.ReactNode }) 
     <div className="flex min-h-screen bg-slate-100">
       {/* Sidebar de escritorio */}
       <aside className="hidden w-64 shrink-0 flex-col bg-gradient-to-b from-marca to-marca-oscuro text-white lg:flex">
-        <div className="flex items-center gap-2 px-5 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 text-lg font-bold">
-            S
-          </div>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold">CRM Seguros</div>
-            <div className="text-[11px] text-white/60">Flotas de transporte</div>
-          </div>
+        <div className="px-5 py-5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/marca/arc-blanco.png" alt="ARC soluciones" className="h-10 w-auto" />
+          <div className="mt-1.5 text-[11px] text-white/60">Seguros de flotas de transporte</div>
         </div>
         <div className="flex-1 px-3">{Navegacion}</div>
         <div className="px-3 pb-4">
@@ -156,7 +152,8 @@ export default function PanelShell({ children }: { children: React.ReactNode }) 
         <div className="fixed inset-0 z-30 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMenuMovil(false)} />
           <aside className="absolute left-0 top-0 flex h-full w-64 flex-col bg-gradient-to-b from-marca to-marca-oscuro px-3 py-5 text-white">
-            <div className="mb-4 px-2 text-sm font-semibold">CRM Seguros</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/marca/arc-blanco.png" alt="ARC soluciones" className="mb-4 h-9 w-auto px-2" />
             {Navegacion}
           </aside>
         </div>

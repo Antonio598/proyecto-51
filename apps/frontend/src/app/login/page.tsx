@@ -32,11 +32,9 @@ export default function LoginPage() {
       <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-marca to-marca-oscuro p-12 text-white lg:flex">
         <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/5" />
         <div className="absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-white/5" />
-        <div className="relative flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-lg font-bold">
-            S
-          </div>
-          <span className="text-lg font-semibold">CRM Seguros</span>
+        <div className="relative">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/marca/arc-blanco.png" alt="ARC soluciones" className="h-12 w-auto" />
         </div>
         <div className="relative max-w-md">
           <h2 className="text-3xl font-semibold leading-tight">
@@ -54,9 +52,12 @@ export default function LoginPage() {
       <div className="flex items-center justify-center bg-slate-100 px-4 py-12">
         <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5 rounded-2xl bg-white p-8 shadow-tarjeta">
           <div className="text-center">
-            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-marca text-lg font-bold text-white lg:hidden">
-              S
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/marca/arc-navy.png"
+              alt="ARC soluciones"
+              className="mx-auto mb-3 h-10 w-auto lg:hidden"
+            />
             <h1 className="text-xl font-semibold text-slate-800">Bienvenido de nuevo</h1>
             <p className="mt-1 text-sm text-slate-500">Inicia sesión para continuar</p>
           </div>
