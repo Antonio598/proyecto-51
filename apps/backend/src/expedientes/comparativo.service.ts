@@ -48,30 +48,38 @@ export class ComparativoService {
    * genera el comparativo y avisa al director comercial.
    * @returns el comparativo generado, o null si aún faltan propuestas.
    */
-  async generarSiEstaCompleto(expedienteId: string, actorUserId?: string) {
+  async generarSiEstaCompleto(
+    expedienteId: string,
+    flotaId?: string | null,
+    actorUserId?: string,
+  ) {
     const expediente = await this.cargar(expedienteId);
 
     const solicitadas = expediente.aseguradorasSolicitadas;
-    const capturadas = expediente.propuestasAseguradora.map((p) => p.aseguradoraId);
+    const capturadas = expediente.propuestasAseguradora
+      .filter((p) => (p.flotaId ?? null) === (flotaId ?? null))
+      .map((p) => p.aseguradoraId);
     const faltantes = solicitadas.filter((id) => !capturadas.includes(id));
 
     if (solicitadas.length === 0 || faltantes.length > 0) {
       this.logger.log(
-        `Expediente ${expedienteId}: faltan ${faltantes.length} propuesta(s) para el comparativo`,
+        `Expediente ${expedienteId} (flota ${flotaId ?? 'todas'}): faltan ${faltantes.length} propuesta(s)`,
       );
       return null;
     }
 
-    return this.generar(expedienteId, actorUserId);
+    return this.generar(expedienteId, flotaId ?? null, actorUserId);
   }
 
-  /** Genera (o regenera) el comparativo con las propuestas capturadas hasta ahora. */
-  async generar(expedienteId: string, actorUserId?: string) {
+  /** Genera (o regenera) el comparativo de una flota con sus propuestas. */
+  async generar(expedienteId: string, flotaId?: string | null, actorUserId?: string) {
     const expediente = await this.cargar(expedienteId);
-    const propuestas = expediente.propuestasAseguradora;
+    const propuestas = expediente.propuestasAseguradora.filter(
+      (p) => (p.flotaId ?? null) === (flotaId ?? null),
+    );
 
     if (propuestas.length === 0) {
-      throw new NotFoundException('No hay propuestas capturadas para comparar');
+      throw new NotFoundException('No hay propuestas capturadas para comparar en esta flota');
     }
 
     const tabla = this.construirTabla(propuestas);
@@ -130,6 +138,7 @@ export class ComparativoService {
     const comparativo = await this.prisma.comparativo.create({
       data: {
         expedienteId,
+        flotaId: flotaId ?? null,
         datosTabla: tabla as unknown as Prisma.InputJsonValue,
         pdfDocId: pdfDoc.id,
         excelDocId: excelDoc.id,

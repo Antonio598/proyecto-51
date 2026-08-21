@@ -58,8 +58,9 @@ export default function ExpedienteDetallePage() {
       setExp(e);
       setAseguradoras(a);
       setAuditoria(aud);
-      if (e.propuestaCliente?.contenido?.aseguradoraId) {
-        setAseguradoraElegida(e.propuestaCliente.contenido.aseguradoraId);
+      const pc = e.propuestasCliente?.[0];
+      if (pc?.contenido?.aseguradoraId) {
+        setAseguradoraElegida(pc.contenido.aseguradoraId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar');
@@ -81,6 +82,7 @@ export default function ExpedienteDetallePage() {
     try {
       const res = await api.capturarPropuesta(id, {
         aseguradoraId: form.aseguradoraId,
+        ...(flotaElegida ? { flotaId: flotaElegida } : {}),
         coberturas: {
           responsabilidadCivil: num(form.responsabilidadCivil),
           danosMateriales: num(form.danosMateriales),
@@ -142,7 +144,17 @@ export default function ExpedienteDetallePage() {
   const puedeAprobar = ['comercial', 'admin'].includes(rol ?? '');
   const puedeProponer = ['administracion', 'admin'].includes(rol ?? '');
   const puedeEmitir = ['tecnico', 'administracion', 'admin'].includes(rol ?? '');
-  const ultimoComparativo = exp.comparativos?.[0];
+
+  // Todo el proceso es por flota: se filtra por la flota elegida (vacío = sin flota/todas).
+  const enFlota = (x: any) => (x?.flotaId ?? '') === flotaElegida;
+  const propuestasFlota = (exp.propuestasAseguradora ?? []).filter(enFlota);
+  const pendientesFlota = (exp.aseguradorasSolicitadas ?? []).filter(
+    (a: string) => !propuestasFlota.some((p: any) => p.aseguradoraId === a),
+  );
+  const ultimoComparativo = (exp.comparativos ?? []).find(enFlota);
+  const propuestaClienteFlota = (exp.propuestasCliente ?? []).find(enFlota);
+  const flotaNombre =
+    exp.cliente.flotas?.find((f: any) => f.id === flotaElegida)?.nombre ?? null;
 
   return (
     <div className="space-y-6">
@@ -157,6 +169,30 @@ export default function ExpedienteDetallePage() {
           </span>
         </div>
         <p className="text-sm text-slate-500">Expediente {exp.folioInterno.slice(-8)}</p>
+      </div>
+
+      {/* Flota del proceso: todo (propuestas, comparativo, propuesta, emisión) se hace por flota */}
+      <div className="rounded-lg border-2 border-marca/30 bg-marca/5 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm font-medium text-slate-700">Flota del proceso:</label>
+          <select
+            value={flotaElegida}
+            onChange={(e) => setFlotaElegida(e.target.value)}
+            className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">Todas las unidades (sin flota)</option>
+            {(exp.cliente.flotas ?? []).map((f: any) => (
+              <option key={f.id} value={f.id}>
+                {f.nombre}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-slate-500">
+            Todo el proceso se hace para{' '}
+            {flotaNombre ? `la flota “${flotaNombre}”` : 'todas las unidades'}. Cambia la flota
+            para repetir el proceso en otra; todo queda en este mismo expediente.
+          </span>
+        </div>
       </div>
 
       {mensaje && (
@@ -175,12 +211,12 @@ export default function ExpedienteDetallePage() {
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">
-            Propuestas de aseguradoras ({exp.propuestasAseguradora.length} de{' '}
+            Propuestas de aseguradoras ({propuestasFlota.length} de{' '}
             {exp.aseguradorasSolicitadas.length})
           </h2>
-          {exp.aseguradorasPendientes?.length > 0 && (
+          {pendientesFlota.length > 0 && (
             <span className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-800">
-              Faltan {exp.aseguradorasPendientes.length} por capturar
+              Faltan {pendientesFlota.length} por capturar
             </span>
           )}
         </div>
@@ -197,7 +233,7 @@ export default function ExpedienteDetallePage() {
               </tr>
             </thead>
             <tbody>
-              {exp.propuestasAseguradora.map((p: any) => (
+              {propuestasFlota.map((p: any) => (
                 <tr key={p.id} className="border-t">
                   <td className="px-3 py-2 font-medium">{p.aseguradora.nombre}</td>
                   <td className="px-3 py-2">{fmt(p.coberturas?.responsabilidadCivil)}</td>
@@ -206,7 +242,7 @@ export default function ExpedienteDetallePage() {
                   <td className="px-3 py-2">{fmt(p.prima)}</td>
                 </tr>
               ))}
-              {exp.propuestasAseguradora.length === 0 && (
+              {propuestasFlota.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-3 py-4 text-center text-slate-400">
                     Aún no hay propuestas capturadas.
@@ -331,9 +367,14 @@ export default function ExpedienteDetallePage() {
       <section className="space-y-2 rounded-lg bg-white p-4 shadow">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Cuadro comparativo</h2>
-          {puedeCapturar && exp.propuestasAseguradora.length > 0 && (
+          {puedeCapturar && propuestasFlota.length > 0 && (
             <button
-              onClick={() => accion(() => api.generarComparativo(id), 'Comparativo regenerado.')}
+              onClick={() =>
+                accion(
+                  () => api.generarComparativo(id, flotaElegida || undefined),
+                  'Comparativo regenerado.',
+                )
+              }
               disabled={ocupado}
               className="rounded border px-3 py-1.5 text-sm disabled:opacity-50"
             >
@@ -416,7 +457,7 @@ export default function ExpedienteDetallePage() {
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
               >
                 <option value="">— Selecciona —</option>
-                {exp.propuestasAseguradora.map((p: any) => (
+                {propuestasFlota.map((p: any) => (
                   <option key={p.aseguradoraId} value={p.aseguradoraId}>
                     {p.aseguradora.nombre}
                   </option>
@@ -426,7 +467,8 @@ export default function ExpedienteDetallePage() {
             <button
               onClick={() =>
                 accion(
-                  () => api.generarPropuestaCliente(id, aseguradoraElegida),
+                  () =>
+                    api.generarPropuestaCliente(id, aseguradoraElegida, flotaElegida || undefined),
                   'Propuesta generada.',
                 )
               }
@@ -435,17 +477,20 @@ export default function ExpedienteDetallePage() {
             >
               Generar propuesta
             </button>
-            {exp.propuestaCliente?.pdfDocId && (
+            {propuestaClienteFlota?.pdfDocId && (
               <>
                 <button
-                  onClick={() => abrirDocumento(exp.propuestaCliente.pdfDocId)}
+                  onClick={() => abrirDocumento(propuestaClienteFlota.pdfDocId)}
                   className="rounded border px-4 py-2 text-sm"
                 >
                   Ver PDF
                 </button>
                 <button
                   onClick={() =>
-                    accion(() => api.enviarPropuestaCliente(id), 'Propuesta enviada por correo.')
+                    accion(
+                      () => api.enviarPropuestaCliente(id, flotaElegida || undefined),
+                      'Propuesta enviada por correo.',
+                    )
                   }
                   disabled={ocupado || !exp.cliente.contactoEmail}
                   title={
@@ -458,10 +503,10 @@ export default function ExpedienteDetallePage() {
               </>
             )}
           </div>
-          {exp.propuestaCliente?.enviadaEn && (
+          {propuestaClienteFlota?.enviadaEn && (
             <p className="text-sm text-green-700">
-              Enviada el {new Date(exp.propuestaCliente.enviadaEn).toLocaleString('es-MX')} a{' '}
-              {exp.cliente.whatsappNumber}
+              Enviada el {new Date(propuestaClienteFlota.enviadaEn).toLocaleString('es-MX')} a{' '}
+              {exp.cliente.contactoEmail ?? exp.cliente.whatsappNumber}
             </p>
           )}
         </section>
@@ -476,21 +521,6 @@ export default function ExpedienteDetallePage() {
             emitir por flota (cada flota se cobra por separado) o todas las unidades.
           </p>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="w-44">
-              <label className="block text-xs font-medium text-slate-600">Flota</label>
-              <select
-                value={flotaElegida}
-                onChange={(e) => setFlotaElegida(e.target.value)}
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              >
-                <option value="">Todas las unidades</option>
-                {(exp.cliente.flotas ?? []).map((f: any) => (
-                  <option key={f.id} value={f.id}>
-                    {f.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="w-44">
               <label className="block text-xs font-medium text-slate-600">Inicio de vigencia</label>
               <input
@@ -549,21 +579,6 @@ export default function ExpedienteDetallePage() {
                 {aseguradoras.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="w-44">
-              <label className="label">Flota</label>
-              <select
-                value={flotaElegida}
-                onChange={(e) => setFlotaElegida(e.target.value)}
-                className="input"
-              >
-                <option value="">Todas las unidades</option>
-                {(exp.cliente.flotas ?? []).map((f: any) => (
-                  <option key={f.id} value={f.id}>
-                    {f.nombre}
                   </option>
                 ))}
               </select>

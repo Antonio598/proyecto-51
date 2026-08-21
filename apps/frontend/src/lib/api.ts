@@ -445,8 +445,11 @@ export const api = {
     request<any>(`/expedientes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   capturarPropuesta: (id: string, data: Record<string, unknown>) =>
     request<any>(`/expedientes/${id}/propuestas`, { method: 'POST', body: JSON.stringify(data) }),
-  generarComparativo: (id: string) =>
-    request<any>(`/expedientes/${id}/comparativo`, { method: 'POST' }),
+  generarComparativo: (id: string, flotaId?: string) =>
+    request<any>(`/expedientes/${id}/comparativo`, {
+      method: 'POST',
+      body: JSON.stringify(flotaId ? { flotaId } : {}),
+    }),
   cambiarEstadoExpediente: (id: string, estado: string) =>
     request<any>(`/expedientes/${id}/estado`, {
       method: 'POST',
@@ -458,13 +461,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ contenido }),
     }),
-  generarPropuestaCliente: (id: string, aseguradoraId: string) =>
+  generarPropuestaCliente: (id: string, aseguradoraId: string, flotaId?: string) =>
     request<any>(`/expedientes/${id}/propuesta-cliente`, {
       method: 'POST',
-      body: JSON.stringify({ aseguradoraId }),
+      body: JSON.stringify({ aseguradoraId, ...(flotaId ? { flotaId } : {}) }),
     }),
-  enviarPropuestaCliente: (id: string) =>
-    request<any>(`/expedientes/${id}/propuesta-cliente/enviar`, { method: 'POST' }),
+  enviarPropuestaCliente: (id: string, flotaId?: string) =>
+    request<any>(`/expedientes/${id}/propuesta-cliente/enviar`, {
+      method: 'POST',
+      body: JSON.stringify(flotaId ? { flotaId } : {}),
+    }),
 
   // ── Pólizas y emisión (Fase D) ──
   listarPolizas: (

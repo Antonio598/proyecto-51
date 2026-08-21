@@ -44,7 +44,12 @@ export class PropuestaClienteService {
    * Genera el PDF de la propuesta a partir de la aseguradora elegida.
    * El expediente debe estar aprobado.
    */
-  async generar(expedienteId: string, aseguradoraId: string, actorUserId: string) {
+  async generar(
+    expedienteId: string,
+    aseguradoraId: string,
+    flotaId: string | null,
+    actorUserId: string,
+  ) {
     const expediente = await this.cargar(expedienteId);
 
     if (expediente.estado !== EstadoExpediente.aprobado) {
@@ -54,14 +59,21 @@ export class PropuestaClienteService {
     }
 
     const elegida = expediente.propuestasAseguradora.find(
-      (p) => p.aseguradoraId === aseguradoraId,
+      (p) => p.aseguradoraId === aseguradoraId && (p.flotaId ?? null) === (flotaId ?? null),
     );
     if (!elegida) {
-      throw new NotFoundException('La aseguradora elegida no tiene propuesta en este expediente');
+      throw new NotFoundException(
+        'La aseguradora elegida no tiene propuesta para esta flota en el expediente',
+      );
     }
 
+    // Sólo las unidades de esta flota (todas si no hay flota).
+    const unidades = expediente.cliente.unidades.filter(
+      (u) => !flotaId || u.flotaId === flotaId,
+    );
+
     // 1. Claude redacta los textos; los números salen de la base, no del modelo.
-    const textos = await this.redactar(expediente, elegida);
+    const textos = await this.redactar(expediente, elegida, unidades);
 
     // 2. Armar el PDF con secciones fijas + textos redactados.
     const coberturas = elegida.coberturas as Coberturas | null;
@@ -97,7 +109,7 @@ export class PropuestaClienteService {
           titulo: 'Unidades a asegurar',
           tabla: {
             encabezados: ['Tipo', 'Marca / Modelo', 'Año', 'VIN', 'Valor asegurado'],
-            filas: expediente.cliente.unidades.map((u) => [
+            filas: unidades.map((u) => [
               u.tipo,
               [u.marca, u.modelo].filter(Boolean).join(' ') || '—',
               u.anio ? String(u.anio) : '—',
@@ -141,19 +153,19 @@ export class PropuestaClienteService {
       },
     });
 
-    const propuesta = await this.prisma.propuestaCliente.upsert({
-      where: { expedienteId },
-      create: {
-        expedienteId,
-        contenido: { ...textos, aseguradoraId } as unknown as Prisma.InputJsonValue,
-        pdfDocId: documento.id,
-      },
-      update: {
-        contenido: { ...textos, aseguradoraId } as unknown as Prisma.InputJsonValue,
-        pdfDocId: documento.id,
-        enviadaEn: null,
-      },
+    const contenido = { ...textos, aseguradoraId, flotaId } as unknown as Prisma.InputJsonValue;
+    // Prisma no admite null en la llave compuesta; buscamos y creamos/actualizamos.
+    const previa = await this.prisma.propuestaCliente.findFirst({
+      where: { expedienteId, flotaId: flotaId ?? null },
     });
+    const propuesta = previa
+      ? await this.prisma.propuestaCliente.update({
+          where: { id: previa.id },
+          data: { contenido, pdfDocId: documento.id, enviadaEn: null },
+        })
+      : await this.prisma.propuestaCliente.create({
+          data: { expedienteId, flotaId: flotaId ?? null, contenido, pdfDocId: documento.id },
+        });
 
     await this.audit.registrar({
       entidad: 'PropuestaCliente',
@@ -167,9 +179,11 @@ export class PropuestaClienteService {
   }
 
   /** Envía la propuesta al cliente por correo y marca el expediente como enviado. */
-  async enviar(expedienteId: string, actorUserId: string) {
+  async enviar(expedienteId: string, flotaId: string | null, actorUserId: string) {
     const expediente = await this.cargar(expedienteId);
-    const propuesta = expediente.propuestaCliente;
+    const propuesta = expediente.propuestasCliente.find(
+      (p) => (p.flotaId ?? null) === (flotaId ?? null),
+    );
 
     if (!propuesta?.pdfDocId) {
       throw new BadRequestException('Genera la propuesta antes de enviarla');
@@ -208,7 +222,7 @@ export class PropuestaClienteService {
 
     await this.prisma.$transaction([
       this.prisma.propuestaCliente.update({
-        where: { expedienteId },
+        where: { id: propuesta.id },
         data: { enviadaEn: new Date() },
       }),
       this.prisma.expediente.update({
@@ -240,12 +254,13 @@ export class PropuestaClienteService {
   private async redactar(
     expediente: Awaited<ReturnType<PropuestaClienteService['cargar']>>,
     elegida: { aseguradora: { nombre: string }; prima: unknown; condiciones: string | null },
+    unidades: Awaited<ReturnType<PropuestaClienteService['cargar']>>['cliente']['unidades'],
   ): Promise<{ resumen: string; alcance: string; condiciones: string }> {
     const contexto = {
       cliente: expediente.cliente.razonSocial,
       aseguradora: elegida.aseguradora.nombre,
-      unidades: expediente.cliente.unidades.length,
-      tiposUnidad: [...new Set(expediente.cliente.unidades.map((u) => u.tipo))],
+      unidades: unidades.length,
+      tiposUnidad: [...new Set(unidades.map((u) => u.tipo))],
       primaAnual: elegida.prima ? Number(elegida.prima) : null,
       siniestralidad: expediente.siniestralidad,
       condicionesAseguradora: elegida.condiciones,
@@ -260,7 +275,7 @@ export class PropuestaClienteService {
       include: {
         cliente: { include: { unidades: { where: { activo: true } } } },
         propuestasAseguradora: { include: { aseguradora: true } },
-        propuestaCliente: true,
+        propuestasCliente: true,
       },
     });
     if (!expediente) throw new NotFoundException('Expediente no encontrado');

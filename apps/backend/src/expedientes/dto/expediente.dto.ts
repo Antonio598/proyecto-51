@@ -58,6 +58,11 @@ export class PropuestaAseguradoraDto {
   @IsString()
   aseguradoraId: string;
 
+  // Flota a la que aplica la propuesta (cada flota se cotiza por separado).
+  @IsOptional()
+  @IsString()
+  flotaId?: string;
+
   @ValidateNested()
   @Type(() => CoberturasDto)
   coberturas: CoberturasDto;
@@ -91,4 +96,8 @@ export class ComentarioDto {
 export class GenerarPropuestaDto {
   @IsString()
   aseguradoraId: string;
+
+  @IsOptional()
+  @IsString()
+  flotaId?: string;
 }

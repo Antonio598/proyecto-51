@@ -70,8 +70,12 @@ export class ExpedientesController {
   /** Regenerar el comparativo a mano (p. ej. tras un ajuste). */
   @Roles(Rol.tecnico, Rol.admin)
   @Post(':id/comparativo')
-  generarComparativo(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.comparativo.generar(id, user.userId);
+  generarComparativo(
+    @Param('id') id: string,
+    @Body('flotaId') flotaId: string | undefined,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.comparativo.generar(id, flotaId ?? null, user.userId);
   }
 
   /** Aprobación / ajuste por parte del director comercial. */
@@ -98,13 +102,17 @@ export class ExpedientesController {
     @Body() dto: GenerarPropuestaDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.propuestaCliente.generar(id, dto.aseguradoraId, user.userId);
+    return this.propuestaCliente.generar(id, dto.aseguradoraId, dto.flotaId ?? null, user.userId);
   }
 
-  /** Envía la propuesta al cliente por WhatsApp. */
+  /** Envía la propuesta al cliente por correo. */
   @Roles(Rol.administracion, Rol.admin)
   @Post(':id/propuesta-cliente/enviar')
-  enviarPropuesta(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.propuestaCliente.enviar(id, user.userId);
+  enviarPropuesta(
+    @Param('id') id: string,
+    @Body('flotaId') flotaId: string | undefined,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.propuestaCliente.enviar(id, flotaId ?? null, user.userId);
   }
 }

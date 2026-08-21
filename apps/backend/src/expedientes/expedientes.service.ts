@@ -45,7 +45,7 @@ export class ExpedientesService {
           orderBy: { createdAt: 'asc' },
         },
         comparativos: { orderBy: { generadoEn: 'desc' } },
-        propuestaCliente: true,
+        propuestasCliente: true,
         comentarios: {
           include: { autor: { select: { id: true, nombre: true, rol: true } } },
           orderBy: { createdAt: 'asc' },
@@ -119,28 +119,25 @@ export class ExpedientesService {
     });
     if (!aseguradora) throw new NotFoundException('Aseguradora no encontrada');
 
-    const propuesta = await this.prisma.propuestaAseguradora.upsert({
-      where: {
-        expedienteId_aseguradoraId: {
-          expedienteId,
-          aseguradoraId: dto.aseguradoraId,
-        },
-      },
-      create: {
-        expedienteId,
-        aseguradoraId: dto.aseguradoraId,
-        coberturas: dto.coberturas as unknown as Prisma.InputJsonValue,
-        deducibles: dto.deducibles as unknown as Prisma.InputJsonValue,
-        prima: dto.prima as unknown as Prisma.Decimal,
-        condiciones: dto.condiciones,
-      },
-      update: {
-        coberturas: dto.coberturas as unknown as Prisma.InputJsonValue,
-        deducibles: dto.deducibles as unknown as Prisma.InputJsonValue,
-        prima: dto.prima as unknown as Prisma.Decimal,
-        condiciones: dto.condiciones,
-      },
+    const flotaId = dto.flotaId ?? null;
+    const datosPropuesta = {
+      coberturas: dto.coberturas as unknown as Prisma.InputJsonValue,
+      deducibles: dto.deducibles as unknown as Prisma.InputJsonValue,
+      prima: dto.prima as unknown as Prisma.Decimal,
+      condiciones: dto.condiciones,
+    };
+    // Prisma no admite null en la llave compuesta; buscamos y creamos/actualizamos.
+    const existente = await this.prisma.propuestaAseguradora.findFirst({
+      where: { expedienteId, flotaId, aseguradoraId: dto.aseguradoraId },
     });
+    const propuesta = existente
+      ? await this.prisma.propuestaAseguradora.update({
+          where: { id: existente.id },
+          data: datosPropuesta,
+        })
+      : await this.prisma.propuestaAseguradora.create({
+          data: { expedienteId, flotaId, aseguradoraId: dto.aseguradoraId, ...datosPropuesta },
+        });
 
     // La primera captura mueve el expediente a análisis técnico.
     if (expediente.estado === EstadoExpediente.en_captura) {
@@ -158,8 +155,12 @@ export class ExpedientesService {
       diff: { expedienteId, aseguradora: aseguradora.nombre },
     });
 
-    // Disparo automático: si ya están todas, genera comparativo y notifica.
-    const comparativo = await this.comparativo.generarSiEstaCompleto(expedienteId, actorUserId);
+    // Disparo automático: si ya están todas las de ESTA flota, genera comparativo.
+    const comparativo = await this.comparativo.generarSiEstaCompleto(
+      expedienteId,
+      flotaId,
+      actorUserId,
+    );
 
     return { propuesta, comparativoGenerado: comparativo !== null, comparativo };
   }

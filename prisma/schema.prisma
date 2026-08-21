@@ -269,7 +269,7 @@ model Expediente {
 
   propuestasAseguradora PropuestaAseguradora[]
   comparativos          Comparativo[]
-  propuestaCliente      PropuestaCliente?
+  propuestasCliente     PropuestaCliente[]
   polizas               Poliza[]
   documentos            Documento[]
   comentarios           Comentario[]
@@ -340,6 +340,8 @@ model PropuestaAseguradora {
   id            String      @id @default(cuid())
   expedienteId  String
   expediente    Expediente  @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  // Flota a la que aplica la propuesta (cada flota se cotiza por separado).
+  flotaId       String?
   aseguradoraId String
   aseguradora   Aseguradora @relation(fields: [aseguradoraId], references: [id])
   coberturas    Json        // estructurado, no texto libre
@@ -350,7 +352,7 @@ model PropuestaAseguradora {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  @@unique([expedienteId, aseguradoraId])
+  @@unique([expedienteId, flotaId, aseguradoraId])
   @@index([expedienteId])
 }
 
@@ -358,6 +360,7 @@ model Comparativo {
   id           String     @id @default(cuid())
   expedienteId String
   expediente   Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  flotaId      String?
   datosTabla   Json       // matriz de coberturas/prima/deducibles por aseguradora
   pdfDocId     String?
   excelDocId   String?
@@ -368,12 +371,15 @@ model Comparativo {
 
 model PropuestaCliente {
   id           String     @id @default(cuid())
-  expedienteId String     @unique
+  expedienteId String
   expediente   Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  flotaId      String?
   contenido    Json       // resumen, alcance de cobertura, costos, condiciones
   pdfDocId     String?
   enviadaEn    DateTime?
   createdAt    DateTime   @default(now())
+
+  @@unique([expedienteId, flotaId])
 }
 
 // ───────────────────────── Pólizas ─────────────────────────
