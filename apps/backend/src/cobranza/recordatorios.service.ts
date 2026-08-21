@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EstadoCobranza, Periodicidad } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CorreoService, plantillaCorreo } from '../correo/correo.service';
 import { ClaudeService } from '../ia/claude.service';
+import { AuditService } from '../audit/audit.service';
 import { generarCalendario } from './plan-pagos';
 
 const num = (v: unknown): number => (v != null ? Number(v) : 0);
@@ -17,6 +18,39 @@ interface LineaDesglose {
   etiqueta: string;
   detalle?: string;
   monto: number;
+}
+
+/** Parcialidad con su Póliza Madre e hijas, para armar el correo de cobranza. */
+interface CorteConMadre {
+  id: string;
+  numeroParcialidad: number;
+  esPrimerPago: boolean;
+  montoEsperado: unknown;
+  fechaVencimiento: Date;
+  polizaMadre: {
+    numeroPagos: number;
+    periodicidad: Periodicidad;
+    fechaEmision: Date | null;
+    primaNeta: unknown;
+    financiamiento: unknown;
+    gastosExpedicion: unknown;
+    iva: unknown;
+    primaTotal: unknown;
+    cliente: { razonSocial: string; contactoEmail: string | null };
+    aseguradora: { nombre: string };
+    hijas: Array<{
+      folio: string | null;
+      estado: string;
+      altaPorEndoso: boolean;
+      primaNeta: unknown;
+      financiamiento: unknown;
+      gastosExpedicion: unknown;
+      iva: unknown;
+      primaTotal: unknown;
+      prima: unknown;
+      unidad: { vin: string | null; marca: string | null; modelo: string | null };
+    }>;
+  };
 }
 
 /**
@@ -36,6 +70,7 @@ export class RecordatoriosService {
     private readonly prisma: PrismaService,
     private readonly correo: CorreoService,
     private readonly claude: ClaudeService,
+    private readonly audit: AuditService,
   ) {}
 
   /** Procesa el calendario de recordatorios de todas las parcialidades abiertas. */
@@ -107,41 +142,28 @@ export class RecordatoriosService {
     return `c3:${bucket}`;
   }
 
-  private async enviarRecordatorio(
-    corte: {
-      id: string;
-      numeroParcialidad: number;
-      esPrimerPago: boolean;
-      montoEsperado: unknown;
-      fechaVencimiento: Date;
-      polizaMadre: {
-        numeroPagos: number;
-        periodicidad: Periodicidad;
-        fechaEmision: Date | null;
-        primaNeta: unknown;
-        financiamiento: unknown;
-        gastosExpedicion: unknown;
-        iva: unknown;
-        primaTotal: unknown;
-        cliente: { razonSocial: string; contactoEmail: string | null };
-        aseguradora: { nombre: string };
-        hijas: Array<{
-          folio: string | null;
-          estado: string;
-          altaPorEndoso: boolean;
-          primaNeta: unknown;
-          financiamiento: unknown;
-          gastosExpedicion: unknown;
-          iva: unknown;
-          primaTotal: unknown;
-          prima: unknown;
-          unidad: { vin: string | null; marca: string | null; modelo: string | null };
-        }>;
-      };
-    },
-    dias: number,
-    clave: string,
-  ) {
+  private async enviarRecordatorio(corte: CorteConMadre, dias: number, clave: string) {
+    const { asunto, html, texto, destino } = await this.armarCorreo(corte, dias);
+    if (!destino) return;
+    await this.correo.enviar({ para: destino, asunto, html, texto });
+    await this.prisma.recordatorioCobranza.create({
+      data: {
+        corteMadreId: corte.id,
+        clave,
+        canal: 'correo',
+        destino,
+        asunto,
+        diasRestantes: dias,
+      },
+    });
+  }
+
+  /**
+   * Arma (sin enviar) el correo de cobranza de una parcialidad: copy adaptativo
+   * con IA, HTML con total + desglose (altas verde / bajas rojo) y, si se indica,
+   * un aviso de que el correo lleva adjuntos con los datos de pago.
+   */
+  private async armarCorreo(corte: CorteConMadre, dias: number, avisoAdjunto?: string) {
     const madre = corte.polizaMadre;
     const total = num(corte.montoEsperado);
     const vencido = dias < 0;
@@ -208,23 +230,126 @@ export class RecordatoriosService {
       altas,
       bajas,
       vencido,
+      avisoAdjunto,
     });
+
+    const texto =
+      `${copy.saludo}\n\n${copy.cuerpo}\n\n` +
+      `Importe de esta parcialidad: ${mxn(total)} (vence ${corte.fechaVencimiento.toLocaleDateString('es-MX')}).\n\n` +
+      (avisoAdjunto ? `${avisoAdjunto}\n\n` : '') +
+      copy.cierre;
+
+    return { asunto: copy.asunto, html, texto, destino: madre.cliente.contactoEmail };
+  }
+
+  /**
+   * Envío MANUAL de un recordatorio de una parcialidad, con archivos adjuntos
+   * (p. ej. los datos para realizar el pago). Se puede usar en cualquier momento
+   * (desde 20 días antes o después). Queda en el historial.
+   */
+  async enviarManual(
+    corteMadreId: string,
+    opciones: { archivos?: { nombre: string; contenido: Buffer; tipo?: string }[]; nota?: string },
+    actorUserId: string,
+  ) {
+    if (!this.correo.estaConfigurado()) {
+      throw new BadRequestException('El correo no está configurado (falta la API key o el remitente).');
+    }
+    const corte = await this.cargarCorteCompleto(corteMadreId);
+    if (!corte) throw new NotFoundException('Parcialidad no encontrada');
+    const destino = corte.polizaMadre.cliente.contactoEmail;
+    if (!destino) {
+      throw new BadRequestException('El cliente no tiene correo registrado.');
+    }
+
+    const dias = Math.round((corte.fechaVencimiento.getTime() - this.hoy().getTime()) / DIA_MS);
+    const tieneAdjuntos = (opciones.archivos?.length ?? 0) > 0;
+    const aviso = [
+      tieneAdjuntos
+        ? 'Adjuntamos en este correo sus datos para realizar el pago.'
+        : '',
+      opciones.nota?.trim() ?? '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const { asunto, html, texto } = await this.armarCorreo(corte, dias, aviso || undefined);
 
     await this.correo.enviar({
-      para: madre.cliente.contactoEmail!,
-      asunto: copy.asunto,
+      para: destino,
+      asunto,
       html,
-      texto: `${copy.saludo}\n\n${copy.cuerpo}\n\nImporte de esta parcialidad: ${mxn(total)} (vence ${corte.fechaVencimiento.toLocaleDateString('es-MX')}).\n\n${copy.cierre}`,
+      texto,
+      adjuntos: opciones.archivos,
     });
 
-    await this.prisma.recordatorioCobranza.create({
+    const registro = await this.prisma.recordatorioCobranza.create({
       data: {
         corteMadreId: corte.id,
-        clave,
+        clave: `manual:${new Date().toISOString()}`,
         canal: 'correo',
-        destino: madre.cliente.contactoEmail,
-        asunto: copy.asunto,
+        destino,
+        asunto,
         diasRestantes: dias,
+      },
+    });
+
+    await this.audit.registrar({
+      entidad: 'CorteMadre',
+      entidadId: corte.id,
+      accion: 'recordatorio_manual',
+      actorUserId,
+      diff: { destino, adjuntos: opciones.archivos?.length ?? 0 },
+    });
+
+    return { enviado: true, registro };
+  }
+
+  /** Parcialidades abiertas candidatas a recordatorio, con días y correo. */
+  async listarPendientes() {
+    const hoy = this.hoy();
+    const cortes = await this.prisma.corteMadre.findMany({
+      where: { estado: { not: EstadoCobranza.pagado } },
+      orderBy: { fechaVencimiento: 'asc' },
+      include: {
+        _count: { select: { recordatorios: true } },
+        polizaMadre: {
+          include: {
+            cliente: { select: { razonSocial: true, contactoEmail: true } },
+            aseguradora: { select: { nombre: true } },
+            flota: { select: { nombre: true } },
+          },
+        },
+      },
+    });
+
+    return cortes.map((c) => ({
+      corteMadreId: c.id,
+      madreId: c.polizaMadreId,
+      numeroParcialidad: c.numeroParcialidad,
+      estado: c.estado,
+      montoEsperado: c.montoEsperado,
+      fechaVencimiento: c.fechaVencimiento,
+      diasRestantes: Math.round((c.fechaVencimiento.getTime() - hoy.getTime()) / DIA_MS),
+      cliente: c.polizaMadre.cliente.razonSocial,
+      correo: c.polizaMadre.cliente.contactoEmail,
+      aseguradora: c.polizaMadre.aseguradora.nombre,
+      flota: c.polizaMadre.flota?.nombre ?? null,
+      recordatoriosEnviados: c._count.recordatorios,
+    }));
+  }
+
+  private cargarCorteCompleto(corteMadreId: string) {
+    return this.prisma.corteMadre.findUnique({
+      where: { id: corteMadreId },
+      include: {
+        polizaMadre: {
+          include: {
+            cliente: { select: { razonSocial: true, contactoEmail: true } },
+            aseguradora: { select: { nombre: true } },
+            hijas: { include: { unidad: { select: { vin: true, marca: true, modelo: true } } } },
+          },
+        },
       },
     });
   }
@@ -290,8 +415,12 @@ export class RecordatoriosService {
     altas: LineaDesglose[];
     bajas: LineaDesglose[];
     vencido: boolean;
+    avisoAdjunto?: string;
   }): string {
     const colorTotal = d.vencido ? '#b91c1c' : '#0f172a';
+    const bloqueAdjunto = d.avisoAdjunto
+      ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin:0 0 16px;color:#1e3a8a;font-size:14px;">📎 ${d.avisoAdjunto}</div>`
+      : '';
     const fila = (l: LineaDesglose, color?: string, signo = '') =>
       `<tr>
         <td style="padding:6px 8px;border-top:1px solid #e2e8f0;">${l.etiqueta}${l.detalle ? `<div style="color:#64748b;font-size:12px;">${l.detalle}</div>` : ''}</td>
@@ -316,6 +445,8 @@ export class RecordatoriosService {
           Parcialidad ${d.numeroParcialidad} de ${d.numeroPagos}${d.esPrimerPago ? ' · primer pago' : ''} · vence ${d.fechaLimite} · ${d.aseguradora}
         </div>
       </div>
+
+      ${bloqueAdjunto}
 
       <table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 16px;">
         <thead>

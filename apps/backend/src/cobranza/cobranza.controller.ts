@@ -1,10 +1,23 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDate, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { Periodicidad, Rol } from '@prisma/client';
 import { CobranzaService } from './cobranza.service';
 import { DesgloseService } from './desglose.service';
 import { PolizasMadreService } from './polizas-madre.service';
+import { RecordatoriosService } from './recordatorios.service';
 import { Roles } from '../auth/roles.decorator';
 import { Public } from '../auth/public.decorator';
 import { ServiceTokenGuard } from '../auth/service-token.guard';
@@ -78,11 +91,46 @@ export class CobranzaController {
     private readonly cobranza: CobranzaService,
     private readonly desglose: DesgloseService,
     private readonly polizasMadre: PolizasMadreService,
+    private readonly recordatorios: RecordatoriosService,
   ) {}
 
   @Get('dashboard')
   dashboard() {
     return this.cobranza.dashboard();
+  }
+
+  // ── Recordatorios de cobranza (envío manual con adjuntos) ──
+
+  @Get('recordatorios')
+  recordatoriosPendientes() {
+    return this.recordatorios.listarPendientes();
+  }
+
+  /**
+   * Envío manual de un recordatorio de una parcialidad, con archivos adjuntos
+   * (p. ej. los datos para realizar el pago).
+   */
+  @Roles(Rol.administracion, Rol.tecnico, Rol.admin)
+  @Post('recordatorios/:corteId/enviar')
+  @UseInterceptors(FilesInterceptor('archivos', 5, { limits: { fileSize: 15 * 1024 * 1024 } }))
+  enviarRecordatorio(
+    @Param('corteId') corteId: string,
+    @UploadedFiles() archivos: Express.Multer.File[] = [],
+    @Body('nota') nota: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.recordatorios.enviarManual(
+      corteId,
+      {
+        nota,
+        archivos: (archivos ?? []).map((a) => ({
+          nombre: a.originalname,
+          contenido: a.buffer,
+          tipo: a.mimetype,
+        })),
+      },
+      user.userId,
+    );
   }
 
   // ── Pólizas Madre (cobranza consolidada) ──

@@ -89,6 +89,31 @@ async function upload<T>(path: string, archivo: File, campos: Record<string, str
   return res.json() as Promise<T>;
 }
 
+/** Subida multipart con varios archivos (campo "archivos") + campos de texto. */
+async function uploadFiles<T>(path: string, archivos: File[], campos: Record<string, string> = {}) {
+  const token = getToken();
+  const datos = new FormData();
+  for (const archivo of archivos) datos.append('archivos', archivo);
+  for (const [clave, valor] of Object.entries(campos)) datos.append(clave, valor);
+
+  const res = await fetch(`${API_URL}/api${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: datos,
+  });
+  if (!res.ok) {
+    let mensaje = `Error ${res.status}`;
+    try {
+      const body = await res.json();
+      mensaje = Array.isArray(body.message) ? body.message.join(', ') : body.message ?? mensaje;
+    } catch {
+      /* respuesta sin JSON */
+    }
+    throw new Error(mensaje);
+  }
+  return res.json() as Promise<T>;
+}
+
 /** Descarga un archivo binario (Excel/PDF) con el token y lo guarda en el navegador. */
 async function descargar(path: string, nombreArchivo: string) {
   const token = getToken();
@@ -515,6 +540,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ fecha }),
     }),
+
+  // ── Recordatorios de cobranza (envío manual) ──
+  recordatoriosPendientes: () => request<any[]>('/cobranza/recordatorios'),
+  enviarRecordatorioManual: (corteId: string, archivos: File[], nota?: string) =>
+    uploadFiles<any>(`/cobranza/recordatorios/${corteId}/enviar`, archivos, nota ? { nota } : {}),
 
   // ── Pagos y conciliación ──
   comprobantesPendientes: () => request<any[]>('/pagos/comprobantes'),
