@@ -39,55 +39,26 @@ export class PolizasMadreService {
     return this.prisma.polizaMadre.create({ data: { clienteId, aseguradoraId, flotaId } });
   }
 
-  /** Flota "General" del cliente (se crea si no existe) para unidades sin flota. */
-  private async flotaGeneral(clienteId: string) {
-    const existente = await this.prisma.flota.findFirst({
-      where: { clienteId, nombre: 'General' },
-    });
-    if (existente) return existente;
-    return this.prisma.flota.create({ data: { clienteId, nombre: 'General' } });
-  }
-
   /**
    * Vincula una póliza a la Madre de su (cliente, flota, aseguradora) y recalcula
-   * los totales. Cada flota se cobra por separado; si la unidad no tiene flota,
-   * se asigna a la flota "General" del cliente. Si `fechaEmision` viene y la
-   * Madre aún no la tenía, fija el ancla del plan y abre la primera parcialidad.
+   * los totales. Cada flota se cobra por separado; si la unidad NO tiene flota, la
+   * Madre queda a nivel cliente (flotaId null). Emitir una hija NO arranca la
+   * cobranza: el plan de pagos se inicia manualmente en la Madre (configurarPlan),
+   * y sólo cuando todas las hijas están emitidas.
    */
-  async vincularHija(polizaId: string, opciones: { fechaEmision?: Date } = {}) {
+  async vincularHija(polizaId: string) {
     const poliza = await this.prisma.poliza.findUnique({
       where: { id: polizaId },
-      include: { unidad: { select: { id: true, flotaId: true } } },
+      include: { unidad: { select: { flotaId: true } } },
     });
     if (!poliza) return null;
 
-    // Resuelve la flota de la unidad (o la crea como "General").
-    let flotaId = poliza.unidad.flotaId;
-    if (!flotaId) {
-      const general = await this.flotaGeneral(poliza.clienteId);
-      flotaId = general.id;
-      await this.prisma.unidad.update({
-        where: { id: poliza.unidad.id },
-        data: { flotaId },
-      });
-    }
-
+    const flotaId = poliza.unidad.flotaId ?? null;
     const madre = await this.asegurarMadre(poliza.clienteId, poliza.aseguradoraId, flotaId);
     if (poliza.polizaMadreId !== madre.id) {
       await this.prisma.poliza.update({
         where: { id: polizaId },
         data: { polizaMadreId: madre.id },
-      });
-    }
-
-    if (opciones.fechaEmision && !madre.fechaEmision) {
-      await this.prisma.polizaMadre.update({
-        where: { id: madre.id },
-        data: {
-          fechaEmision: opciones.fechaEmision,
-          primeraFechaPago: sumarDiasNaturales(opciones.fechaEmision, DIAS_A_PRIMER_PAGO),
-          numeroPagos: numeroPagosDe(madre.periodicidad),
-        },
       });
     }
 
@@ -156,6 +127,26 @@ export class PolizasMadreService {
     const periodicidad = datos.periodicidad ?? madre.periodicidad;
     const fechaEmision = datos.fechaEmision ?? madre.fechaEmision ?? undefined;
     const numeroPagos = numeroPagosDe(periodicidad);
+
+    // Para iniciar el plan (fijar fecha de emisión) TODAS las hijas deben estar
+    // emitidas. Emitir una hija no arranca la cobranza; se arranca aquí.
+    if (fechaEmision) {
+      const hijas = await this.prisma.poliza.findMany({
+        where: { polizaMadreId: madreId },
+        select: { estado: true },
+      });
+      if (hijas.length === 0) {
+        throw new BadRequestException('La Póliza Madre no tiene pólizas hijas');
+      }
+      const sinEmitir = hijas.filter(
+        (h) => h.estado !== EstadoPoliza.emitida && h.estado !== EstadoPoliza.cancelada,
+      );
+      if (sinEmitir.length > 0) {
+        throw new BadRequestException(
+          `Faltan ${sinEmitir.length} póliza(s) hija(s) por emitir antes de iniciar el plan de cobranza`,
+        );
+      }
+    }
 
     const dec = (v?: number) => (v !== undefined ? (v as never) : undefined);
 

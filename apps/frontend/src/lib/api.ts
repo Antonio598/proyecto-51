@@ -214,7 +214,8 @@ function agruparEnTandas(archivos: File[]): File[][] {
  * petición gigante (lo que hacía fallar el proxy con 502).
  */
 export async function enviarPortal(datos: {
-  telefono: string;
+  rfc: string;
+  telefono?: string;
   email: string;
   nombre?: string;
   archivos: File[];
@@ -229,7 +230,8 @@ export async function enviarPortal(datos: {
       throw new Error('Adjunta tu comprobante en PDF o foto.');
     }
     const form = new FormData();
-    form.append('telefono', datos.telefono);
+    form.append('rfc', datos.rfc);
+    if (datos.telefono) form.append('telefono', datos.telefono);
     form.append('email', datos.email);
     if (datos.nombre) form.append('nombre', datos.nombre);
     form.append('categoria', 'comprobante');
@@ -267,7 +269,8 @@ export async function enviarPortal(datos: {
 
   for (let i = 0; i < tandas.length; i++) {
     const form = new FormData();
-    form.append('telefono', datos.telefono);
+    form.append('rfc', datos.rfc);
+    if (datos.telefono) form.append('telefono', datos.telefono);
     form.append('email', datos.email);
     if (datos.nombre) form.append('nombre', datos.nombre);
     if (loteId) form.append('loteId', loteId);
@@ -434,6 +437,8 @@ export const api = {
 
   // ── Aseguradoras ──
   listarAseguradoras: () => request<any[]>('/aseguradoras'),
+  crearAseguradora: (nombre: string) =>
+    request<any>('/aseguradoras', { method: 'POST', body: JSON.stringify({ nombre }) }),
 
   // ── Expedientes (Fase C) ──
   listarExpedientes: (estado?: string) =>

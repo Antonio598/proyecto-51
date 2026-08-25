@@ -88,6 +88,7 @@ export default function PortalPage() {
 
 function FormularioEnvio() {
   const [categoria, setCategoria] = useState<'flota' | 'comprobante'>('flota');
+  const [rfc, setRfc] = useState('');
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
   const [nombre, setNombre] = useState('');
@@ -127,7 +128,8 @@ function FormularioEnvio() {
     setProgreso(null);
     try {
       await enviarPortal({
-        telefono,
+        rfc,
+        telefono: telefono || undefined,
         email,
         nombre: nombre || undefined,
         archivos,
@@ -203,20 +205,30 @@ function FormularioEnvio() {
 
       <div>
         <label className="label">
-          Teléfono <span className="text-red-500">*</span>
+          RFC <span className="text-red-500">*</span>
         </label>
+        <input
+          value={rfc}
+          onChange={(e) => setRfc(e.target.value.toUpperCase())}
+          placeholder="Ej. XAXX010101000"
+          className="input uppercase"
+          required
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Con tu RFC identificamos y vinculamos tus documentos a tu cuenta.
+        </p>
+      </div>
+
+      <div>
+        <label className="label">Teléfono</label>
         <input
           type="tel"
           inputMode="tel"
           value={telefono}
           onChange={(e) => setTelefono(e.target.value)}
-          placeholder="Ej. 55 1234 5678"
+          placeholder="Opcional · Ej. 55 1234 5678"
           className="input"
-          required
         />
-        <p className="mt-1 text-xs text-slate-400">
-          Con este número vinculamos tus documentos a tu cuenta.
-        </p>
       </div>
 
       <div>

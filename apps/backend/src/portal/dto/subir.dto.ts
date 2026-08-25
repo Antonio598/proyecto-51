@@ -1,9 +1,14 @@
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class SubirPortalDto {
+  // RFC: dato principal con el que se identifica/crea al cliente.
   @IsString()
-  @MinLength(8, { message: 'Escribe un teléfono válido.' })
-  telefono: string;
+  @MinLength(10, { message: 'Escribe tu RFC.' })
+  rfc: string;
+
+  @IsOptional()
+  @IsString()
+  telefono?: string;
 
   @IsEmail({}, { message: 'Correo electrónico inválido.' })
   email: string;

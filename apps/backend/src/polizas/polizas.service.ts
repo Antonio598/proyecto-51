@@ -398,8 +398,9 @@ export class PolizasService {
       },
     });
 
-    // Vincula la hija a su Madre y, si es la primera emisión, ancla el plan.
-    await this.polizasMadre.vincularHija(id, { fechaEmision: inicio });
+    // Vincula la hija a su Madre (no arranca la cobranza: el plan se inicia en
+    // la Madre cuando todas las hijas están emitidas).
+    await this.polizasMadre.vincularHija(id);
 
     await this.audit.registrar({
       entidad: 'Poliza',

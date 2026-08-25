@@ -149,15 +149,13 @@ export class CobranzaService {
    * regenera la parcialidad abierta de cada Madre con plan configurado.
    */
   async asegurarCortes() {
-    // 1. Vincular pólizas emitidas que se quedaron sin Madre.
+    // 1. Vincular pólizas emitidas que se quedaron sin Madre (no arranca el plan).
     const sueltas = await this.prisma.poliza.findMany({
       where: { estado: 'emitida', polizaMadreId: null },
-      select: { id: true, vigenciaInicio: true },
+      select: { id: true },
     });
     for (const p of sueltas) {
-      await this.polizasMadre.vincularHija(p.id, {
-        fechaEmision: p.vigenciaInicio ?? new Date(),
-      });
+      await this.polizasMadre.vincularHija(p.id);
     }
 
     // 2. Regenerar el corte abierto de cada Madre con emisión y total.

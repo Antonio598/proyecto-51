@@ -36,6 +36,7 @@ export class PortalController {
   )
   subir(@UploadedFiles() archivos: Express.Multer.File[], @Body() dto: SubirPortalDto) {
     return this.portal.recibir({
+      rfc: dto.rfc,
       telefono: dto.telefono,
       email: dto.email,
       nombre: dto.nombre,

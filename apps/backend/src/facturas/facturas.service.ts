@@ -53,7 +53,15 @@ export class FacturasService {
     archivo: { buffer: Buffer; nombre: string; mime: string },
     actorUserId: string,
   ) {
-    const lectura = await this.claude.leerFactura(archivo.buffer, archivo.mime);
+    let lectura: Awaited<ReturnType<ClaudeService['leerFactura']>>;
+    try {
+      lectura = await this.claude.leerFactura(archivo.buffer, archivo.mime);
+    } catch (err) {
+      this.logger.error(`No se pudo leer la factura con IA: ${(err as Error).message}`);
+      throw new BadRequestException(
+        `No se pudo leer la factura con IA: ${(err as Error).message}. Verifica que el archivo sea legible (PDF o imagen).`,
+      );
+    }
     const rfc = normalizarRfc(lectura.rfc);
     if (!rfc) {
       throw new BadRequestException(

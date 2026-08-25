@@ -56,7 +56,8 @@ export class PortalService {
   ) {}
 
   async recibir(datos: {
-    telefono: string;
+    rfc: string;
+    telefono?: string;
     email: string;
     nombre?: string;
     loteId?: string;
@@ -82,13 +83,25 @@ export class PortalService {
       this.validarArchivo(a);
     }
 
-    const numero = WhatsappService.normalizarNumero(datos.telefono);
-    if (numero.replace(/\D/g, '').length < 10) {
-      throw new BadRequestException('El teléfono no parece válido.');
+    // El RFC es la llave del cliente: con él se identifica o se crea.
+    const rfc = normalizarRfc(datos.rfc);
+    if (!rfc) {
+      throw new BadRequestException('Escribe tu RFC: es el dato con el que te identificamos.');
+    }
+    // El teléfono es opcional (dato adicional).
+    let numero: string | null = null;
+    if (datos.telefono) {
+      const n = WhatsappService.normalizarNumero(datos.telefono);
+      if (n.replace(/\D/g, '').length >= 10) numero = n;
     }
 
-    // 1. Buscar el cliente por teléfono; si no existe, crearlo.
-    const { cliente, creado } = await this.buscarOCrearCliente(numero, datos.email, datos.nombre);
+    // 1. Buscar el cliente por RFC; si no existe, crearlo.
+    const { cliente, creado } = await this.buscarOCrearClientePorRfc(
+      rfc,
+      datos.email,
+      numero,
+      datos.nombre,
+    );
 
     // 2. Guardar los archivos en el almacén, en tandas para no tardar de más
     //    (una subida secuencial de muchos archivos puede pasarse del timeout
@@ -126,13 +139,18 @@ export class PortalService {
             mime: g.mime,
             nombreOriginal: g.nombre,
             procesado: false,
-            metadata: { telefono: numero, email: datos.email, nombre: datos.nombre ?? null },
+            metadata: {
+              rfc,
+              telefono: numero,
+              email: datos.email,
+              nombre: datos.nombre ?? null,
+            },
           },
         });
         creados.push(doc);
         void this.conciliarComprobante(doc.id, cliente.razonSocial);
       }
-      this.logger.log(`Portal: ${creados.length} comprobante(s) de pago de ${numero}`);
+      this.logger.log(`Portal: ${creados.length} comprobante(s) de pago de ${rfc}`);
       return { recibidos: creados.length, clienteNuevo: creado, categoria: 'comprobante' };
     }
 
@@ -159,6 +177,7 @@ export class PortalService {
         nombreOriginal: unSolo ? guardados[0].nombre : `Paquete de ${guardados.length} archivos`,
         procesado: false,
         metadata: {
+          rfc,
           telefono: numero,
           email: datos.email,
           nombre: datos.nombre ?? null,
@@ -173,7 +192,7 @@ export class PortalService {
       rol: Rol.captura,
       titulo: 'Documentos recibidos por el portal',
       mensaje:
-        `${cliente.razonSocial} (${numero}) subió documentos por el portal` +
+        `${cliente.razonSocial} (RFC ${rfc}) subió documentos por el portal` +
         (creado ? ' — cliente nuevo, revisar sus datos.' : '.'),
       enlace: '/documentos',
     });
@@ -185,7 +204,7 @@ export class PortalService {
     }
 
     this.logger.log(
-      `Portal: documento ${documento.id} creado con ${guardados.length} archivo(s) de ${numero}` +
+      `Portal: documento ${documento.id} creado con ${guardados.length} archivo(s) de ${rfc}` +
         (creado ? ' (cliente creado)' : ` (${cliente.razonSocial})`),
     );
 
@@ -380,30 +399,45 @@ export class PortalService {
     });
   }
 
-  private async buscarOCrearCliente(numero: string, email: string, nombre?: string) {
-    const existente = await this.prisma.cliente.findUnique({ where: { whatsappNumber: numero } });
+  private async buscarOCrearClientePorRfc(
+    rfc: string,
+    email: string,
+    numero: string | null,
+    nombre?: string,
+  ) {
+    const existente = await this.prisma.cliente.findUnique({ where: { rfc } });
     if (existente) {
-      // Completar el correo si el cliente no tenía uno.
-      if (!existente.contactoEmail && email) {
-        await this.prisma.cliente.update({
-          where: { id: existente.id },
-          data: { contactoEmail: email },
-        });
+      // Completar correo/teléfono si faltaban.
+      const data: { contactoEmail?: string; whatsappNumber?: string } = {};
+      if (!existente.contactoEmail && email) data.contactoEmail = email;
+      if (!existente.whatsappNumber && numero && !(await this.telefonoOcupado(numero))) {
+        data.whatsappNumber = numero;
+      }
+      if (Object.keys(data).length > 0) {
+        await this.prisma.cliente.update({ where: { id: existente.id }, data });
       }
       return { cliente: existente, creado: false };
     }
 
+    // El teléfono es único: sólo lo guardamos si no lo tiene ya otro cliente.
+    const telefonoLibre = numero && !(await this.telefonoOcupado(numero)) ? numero : null;
     const cliente = await this.prisma.cliente.create({
       data: {
+        rfc,
         // Nombre provisional: lo que teclee el cliente, o un marcador que el equipo completa.
-        razonSocial: nombre?.trim() || `Cliente portal ${numero}`,
+        razonSocial: nombre?.trim() || `Cliente ${rfc}`,
         contactoEmail: email || null,
         contactoNombre: nombre?.trim() || null,
-        whatsappNumber: numero,
+        whatsappNumber: telefonoLibre,
         notas: 'Cliente creado automáticamente desde el portal de autoservicio.',
       },
     });
     return { cliente, creado: true };
+  }
+
+  private async telefonoOcupado(numero: string): Promise<boolean> {
+    const otro = await this.prisma.cliente.findUnique({ where: { whatsappNumber: numero } });
+    return !!otro;
   }
 
   /** Valida un archivo de contenido ya expandido (allowlist + 15 MB). */

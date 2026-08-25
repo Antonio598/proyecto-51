@@ -489,8 +489,7 @@ export class ClaudeService {
             properties: {
               movimiento: {
                 type: ['string', 'null'],
-                enum: ['alta', 'baja', 'cancelacion', null],
-                description: 'Tipo de movimiento del endoso',
+                description: 'Tipo de movimiento: "alta", "baja" o "cancelacion"',
               },
               serie: { type: ['string', 'null'], description: 'Número de serie / VIN' },
               rfc: { type: ['string', 'null'] },

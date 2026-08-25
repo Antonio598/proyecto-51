@@ -33,7 +33,15 @@ export class EndososService {
     archivo: { buffer: Buffer; nombre: string; mime: string },
     actorUserId: string,
   ) {
-    const lectura = await this.claude.leerEndoso(archivo.buffer, archivo.mime);
+    let lectura: Awaited<ReturnType<ClaudeService['leerEndoso']>>;
+    try {
+      lectura = await this.claude.leerEndoso(archivo.buffer, archivo.mime);
+    } catch (err) {
+      this.logger.error(`No se pudo leer el endoso con IA: ${(err as Error).message}`);
+      throw new BadRequestException(
+        `No se pudo leer el endoso con IA: ${(err as Error).message}. Verifica que el archivo sea legible (PDF o imagen).`,
+      );
+    }
     const serie = lectura.serie?.trim() || null;
     const rfc = normalizarRfc(lectura.rfc);
 

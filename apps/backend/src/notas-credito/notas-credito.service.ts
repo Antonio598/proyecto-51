@@ -33,7 +33,15 @@ export class NotasCreditoService {
   }
 
   async subir(archivo: { buffer: Buffer; nombre: string; mime: string }, actorUserId: string) {
-    const lectura = await this.claude.leerNotaCredito(archivo.buffer, archivo.mime);
+    let lectura: Awaited<ReturnType<ClaudeService['leerNotaCredito']>>;
+    try {
+      lectura = await this.claude.leerNotaCredito(archivo.buffer, archivo.mime);
+    } catch (err) {
+      this.logger.error(`No se pudo leer la nota de crédito con IA: ${(err as Error).message}`);
+      throw new BadRequestException(
+        `No se pudo leer la nota de crédito con IA: ${(err as Error).message}. Verifica que el archivo sea legible (PDF o imagen).`,
+      );
+    }
     const rfc = normalizarRfc(lectura.rfc);
     if (!rfc) {
       throw new BadRequestException('No se pudo leer el RFC del receptor en la nota de crédito.');

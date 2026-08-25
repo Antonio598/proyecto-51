@@ -36,6 +36,7 @@ export default function ExpedienteDetallePage() {
   const [exp, setExp] = useState<any>(null);
   const [auditoria, setAuditoria] = useState<any[]>([]);
   const [aseguradoras, setAseguradoras] = useState<any[]>([]);
+  const [nuevaAseg, setNuevaAseg] = useState('');
   const [form, setForm] = useState({ ...vacia });
   const [comentario, setComentario] = useState('');
   const [aseguradoraElegida, setAseguradoraElegida] = useState('');
@@ -134,6 +135,20 @@ export default function ExpedienteDetallePage() {
       window.open(url, '_blank');
     } catch {
       setError('No se pudo abrir el documento');
+    }
+  }
+
+  async function agregarAseguradora() {
+    const nombre = nuevaAseg.trim();
+    if (!nombre) return;
+    setError('');
+    try {
+      const creada = await api.crearAseguradora(nombre);
+      setAseguradoras(await api.listarAseguradoras());
+      setForm((f) => ({ ...f, aseguradoraId: creada.id }));
+      setNuevaAseg('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo agregar la aseguradora');
     }
   }
 
@@ -275,6 +290,22 @@ export default function ExpedienteDetallePage() {
                     </option>
                   ))}
                 </select>
+                <div className="mt-1 flex gap-1">
+                  <input
+                    value={nuevaAseg}
+                    onChange={(e) => setNuevaAseg(e.target.value)}
+                    placeholder="Otra aseguradora…"
+                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={agregarAseguradora}
+                    disabled={!nuevaAseg.trim()}
+                    className="rounded bg-marca px-2 py-1 text-xs text-white disabled:opacity-50"
+                  >
+                    Agregar
+                  </button>
+                </div>
               </div>
               <div className="w-40">
                 <label className="block text-xs font-medium text-slate-600">Prima anual</label>
