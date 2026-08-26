@@ -9,6 +9,16 @@ function mxn(v: unknown) {
   return Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 }
 
+function etiquetaFactura(f: any) {
+  const partes = [
+    f.tipo,
+    f.poliza?.folio ? `póliza ${f.poliza.folio}` : null,
+    f.uuid ? `UUID ${String(f.uuid).slice(0, 8)}…` : null,
+    new Date(f.createdAt).toLocaleDateString('es-MX'),
+  ].filter(Boolean);
+  return partes.join(' · ');
+}
+
 export default function NotasCreditoPage() {
   const [notas, setNotas] = useState<any[]>([]);
   const [resultado, setResultado] = useState<any>(null);
@@ -16,6 +26,38 @@ export default function NotasCreditoPage() {
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Vinculación manual a factura (por nota).
+  const [vinculando, setVinculando] = useState<string | null>(null);
+  const [facturasDe, setFacturasDe] = useState<any[]>([]);
+  const [facturaSel, setFacturaSel] = useState('');
+
+  async function vincular(notaId: string, facturaId: string) {
+    if (!facturaId) return;
+    setOcupado(true);
+    setError('');
+    try {
+      await api.vincularNotaFactura(notaId, facturaId);
+      setVinculando(null);
+      setFacturaSel('');
+      setMensaje('Nota de crédito vinculada a la factura.');
+      await cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo vincular');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function abrirVincular(clienteId: string, notaId: string) {
+    setError('');
+    setFacturaSel('');
+    setVinculando(notaId);
+    try {
+      setFacturasDe(await api.listarFacturasCliente(clienteId));
+    } catch {
+      setFacturasDe([]);
+    }
+  }
 
   async function cargar() {
     try {
@@ -112,6 +154,40 @@ export default function NotasCreditoPage() {
             <span className="text-slate-500">Factura vinculada: </span>
             <span className="font-medium">{resultado.facturaVinculada ? 'Sí' : 'No encontrada'}</span>
           </div>
+
+          {!resultado.facturaVinculada && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-slate-500">Vincular a factura:</span>
+              <select
+                value={facturaSel}
+                onChange={(e) => setFacturaSel(e.target.value)}
+                className="rounded border px-2 py-1 text-xs"
+              >
+                <option value="">— elige factura —</option>
+                {(resultado.facturasCliente ?? []).map((f: any) => (
+                  <option key={f.id} value={f.id}>
+                    {etiquetaFactura(f)}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={async () => {
+                  await vincular(resultado.nota.id, facturaSel);
+                  setResultado((r: any) => (r ? { ...r, facturaVinculada: true } : r));
+                }}
+                disabled={ocupado || !facturaSel}
+                className="rounded bg-green-700 px-3 py-1 text-xs text-white disabled:opacity-50"
+              >
+                Vincular
+              </button>
+              {(resultado.facturasCliente ?? []).length === 0 && (
+                <span className="text-xs text-slate-400">
+                  Este cliente no tiene facturas cargadas para vincular.
+                </span>
+              )}
+            </div>
+          )}
+
           <Link
             href={`/clientes/${resultado.cliente.id}`}
             className="mt-2 inline-block text-marca"
@@ -150,8 +226,35 @@ export default function NotasCreditoPage() {
                   <td className="px-3 py-2">
                     {n.facturaId ? (
                       <span className="text-xs text-green-700">Vinculada</span>
+                    ) : vinculando === n.id ? (
+                      <span className="flex flex-wrap items-center gap-1">
+                        <select
+                          value={facturaSel}
+                          onChange={(e) => setFacturaSel(e.target.value)}
+                          className="rounded border px-1 py-1 text-xs"
+                        >
+                          <option value="">— factura —</option>
+                          {facturasDe.map((f: any) => (
+                            <option key={f.id} value={f.id}>
+                              {etiquetaFactura(f)}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => vincular(n.id, facturaSel)}
+                          disabled={ocupado || !facturaSel}
+                          className="rounded bg-green-700 px-2 py-1 text-xs text-white disabled:opacity-50"
+                        >
+                          Guardar
+                        </button>
+                      </span>
                     ) : (
-                      <span className="text-xs text-slate-400">Sin factura</span>
+                      <button
+                        onClick={() => abrirVincular(n.clienteId, n.id)}
+                        className="rounded border px-2 py-1 text-xs text-slate-600"
+                      >
+                        Vincular factura
+                      </button>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">

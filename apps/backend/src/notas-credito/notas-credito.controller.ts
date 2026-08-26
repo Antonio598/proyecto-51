@@ -1,4 +1,13 @@
-import { Controller, Get, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Rol } from '@prisma/client';
 import { NotasCreditoService } from './notas-credito.service';
@@ -23,5 +32,16 @@ export class NotasCreditoController {
       { buffer: archivo.buffer, nombre: archivo.originalname, mime: archivo.mimetype },
       user.userId,
     );
+  }
+
+  /** Vincula manualmente una nota de crédito a una factura. */
+  @Roles(Rol.administracion, Rol.captura, Rol.admin)
+  @Patch(':id/factura')
+  vincularFactura(
+    @Param('id') id: string,
+    @Body('facturaId') facturaId: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.notas.vincularFactura(id, facturaId, user.userId);
   }
 }

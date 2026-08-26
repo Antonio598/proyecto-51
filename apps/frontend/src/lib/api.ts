@@ -542,6 +542,11 @@ export const api = {
   // ── Notas de crédito ──
   listarNotasCredito: () => request<any[]>('/notas-credito'),
   subirNotaCredito: (archivo: File) => upload<any>('/notas-credito', archivo),
+  vincularNotaFactura: (notaId: string, facturaId: string) =>
+    request<any>(`/notas-credito/${notaId}/factura`, {
+      method: 'PATCH',
+      body: JSON.stringify({ facturaId }),
+    }),
 
   // ── Cobranza ──
   dashboardCobranza: () => request<any>('/cobranza/dashboard'),

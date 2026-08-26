@@ -52,10 +52,12 @@ export class NotasCreditoService {
       throw new NotFoundException(`No hay un cliente registrado con el RFC ${rfc}.`);
     }
 
-    // Si la nota trae el UUID de la factura relacionada, se busca esa factura.
-    const factura = lectura.uuid_relacionado
+    // Si la nota trae el UUID de la factura relacionada, se busca esa factura por
+    // su UUID (folio fiscal, único globalmente), sin importar mayúsculas/minúsculas.
+    const uuidRel = lectura.uuid_relacionado?.trim() || null;
+    const factura = uuidRel
       ? await this.prisma.factura.findFirst({
-          where: { uuid: lectura.uuid_relacionado, clienteId: cliente.id },
+          where: { uuid: { equals: uuidRel, mode: 'insensitive' } },
         })
       : null;
 
@@ -81,7 +83,7 @@ export class NotasCreditoService {
       data: {
         clienteId: cliente.id,
         facturaId: factura?.id ?? null,
-        uuidRelacionado: lectura.uuid_relacionado ?? null,
+        uuidRelacionado: uuidRel,
         importe: lectura.total != null ? (lectura.total as never) : null,
         storageDocId: documento.id,
       },
@@ -100,7 +102,46 @@ export class NotasCreditoService {
       nota,
       cliente: { id: cliente.id, razonSocial: cliente.razonSocial, rfc: cliente.rfc },
       facturaVinculada: !!factura,
+      // Para vincular a mano si no cayó sola: las facturas del cliente.
+      facturasCliente: await this.facturasDelCliente(cliente.id),
       lectura,
     };
+  }
+
+  /** Vincula manualmente una nota de crédito a una factura. */
+  async vincularFactura(notaId: string, facturaId: string, actorUserId: string) {
+    const nota = await this.prisma.notaCredito.findUnique({ where: { id: notaId } });
+    if (!nota) throw new NotFoundException('Nota de crédito no encontrada');
+    const factura = await this.prisma.factura.findUnique({ where: { id: facturaId } });
+    if (!factura) throw new NotFoundException('Factura no encontrada');
+
+    const actualizada = await this.prisma.notaCredito.update({
+      where: { id: notaId },
+      data: { facturaId },
+    });
+    await this.audit.registrar({
+      entidad: 'NotaCredito',
+      entidadId: notaId,
+      accion: 'vincular_factura',
+      actorUserId,
+      diff: { facturaId },
+    });
+    return actualizada;
+  }
+
+  /** Facturas del cliente (por RFC directo o vía sus pólizas) para vincular a mano. */
+  private facturasDelCliente(clienteId: string) {
+    return this.prisma.factura.findMany({
+      where: { OR: [{ clienteId }, { poliza: { clienteId } }] },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        tipo: true,
+        uuid: true,
+        createdAt: true,
+        poliza: { select: { folio: true } },
+      },
+    });
   }
 }
