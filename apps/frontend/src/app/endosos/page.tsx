@@ -17,7 +17,10 @@ function mxn(v: unknown) {
 
 export default function EndososPage() {
   const [endosos, setEndosos] = useState<any[]>([]);
+  const [aseguradoras, setAseguradoras] = useState<any[]>([]);
   const [propuesta, setPropuesta] = useState<any>(null);
+  const [altaAseg, setAltaAseg] = useState('');
+  const [altaFlota, setAltaFlota] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -25,7 +28,9 @@ export default function EndososPage() {
 
   async function cargar() {
     try {
-      setEndosos(await api.listarEndosos());
+      const [e, a] = await Promise.all([api.listarEndosos(), api.listarAseguradoras()]);
+      setEndosos(e);
+      setAseguradoras(a);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar');
     }
@@ -34,6 +39,31 @@ export default function EndososPage() {
   useEffect(() => {
     cargar();
   }, []);
+
+  async function crearAlta(endosoId: string) {
+    if (!altaAseg) return;
+    setOcupado(true);
+    setError('');
+    try {
+      const res = await api.aplicarAltaEndoso(endosoId, {
+        aseguradoraId: altaAseg,
+        ...(altaFlota ? { flotaId: altaFlota } : {}),
+      });
+      setPropuesta(null);
+      setAltaAseg('');
+      setAltaFlota('');
+      setMensaje(
+        `Alta aplicada: se creó la póliza hija y se agregó a la cobranza de su Póliza Madre${
+          res.madreId ? '' : ''
+        }.`,
+      );
+      await cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al aplicar el alta');
+    } finally {
+      setOcupado(false);
+    }
+  }
 
   async function subir(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
@@ -163,10 +193,63 @@ export default function EndososPage() {
                 </Link>
               </div>
             </div>
+          ) : propuesta.endoso.movimiento === 'alta' && propuesta.clienteAlta ? (
+            <div className="space-y-2 rounded border border-green-200 bg-green-50 px-3 py-3 text-sm">
+              <div className="font-medium text-green-800">
+                Alta nueva para {propuesta.clienteAlta.razonSocial}
+                {propuesta.clienteAlta.rfc ? ` · ${propuesta.clienteAlta.rfc}` : ''}
+              </div>
+              <p className="text-slate-600">
+                No existe una póliza con esa serie: se creará una <strong>póliza hija nueva</strong>{' '}
+                para este cliente y se agregará a la cobranza de su Póliza Madre. Elige la aseguradora
+                y la flota (si no eliges flota, cae en “General”).
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="text-xs">
+                  <span className="block text-slate-500">Aseguradora</span>
+                  <select
+                    value={altaAseg}
+                    onChange={(e) => setAltaAseg(e.target.value)}
+                    className="mt-1 rounded border px-2 py-1.5 text-sm"
+                  >
+                    <option value="">— elige —</option>
+                    {aseguradoras.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs">
+                  <span className="block text-slate-500">Flota</span>
+                  <select
+                    value={altaFlota}
+                    onChange={(e) => setAltaFlota(e.target.value)}
+                    className="mt-1 rounded border px-2 py-1.5 text-sm"
+                  >
+                    <option value="">General (sin flota específica)</option>
+                    {(propuesta.clienteAlta.flotas ?? []).map((f: any) => (
+                      <option key={f.id} value={f.id}>
+                        {f.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  onClick={() => crearAlta(propuesta.endoso.id)}
+                  disabled={ocupado || !altaAseg}
+                  className="rounded bg-green-700 px-4 py-2 text-xs text-white disabled:opacity-50"
+                >
+                  Crear alta y agregar a cobranza
+                </button>
+              </div>
+            </div>
           ) : (
             <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
               No se localizó ninguna póliza con la serie <strong>{propuesta.endoso.serie ?? '—'}</strong>.
-              Regístrala o emítela antes de aplicar el endoso.
+              {propuesta.endoso.movimiento === 'alta'
+                ? ' Para dar el alta, primero registra al cliente con ese RFC.'
+                : ' Regístrala o emítela antes de aplicar el endoso.'}
             </p>
           )}
         </section>

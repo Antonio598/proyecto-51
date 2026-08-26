@@ -29,6 +29,19 @@ export default function NotasCreditoPage() {
     cargar();
   }, []);
 
+  async function verArchivo(storageDocId?: string) {
+    if (!storageDocId) {
+      setError('Esta nota de crédito no tiene archivo asociado.');
+      return;
+    }
+    try {
+      const { url } = await api.enlaceDocumento(storageDocId);
+      window.open(url, '_blank');
+    } catch {
+      setError('No se pudo abrir el archivo.');
+    }
+  }
+
   async function subir(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
     if (inputRef.current) inputRef.current.value = '';
@@ -118,12 +131,13 @@ export default function NotasCreditoPage() {
                 <th className="px-3 py-2">Cliente</th>
                 <th className="px-3 py-2">Importe</th>
                 <th className="px-3 py-2">Factura</th>
+                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {notas.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-slate-400">
+                  <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
                     Aún no hay notas de crédito.
                   </td>
                 </tr>
@@ -139,6 +153,14 @@ export default function NotasCreditoPage() {
                     ) : (
                       <span className="text-xs text-slate-400">Sin factura</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => verArchivo(n.storageDocId)}
+                      className="rounded border px-3 py-1.5 text-xs"
+                    >
+                      Ver archivo
+                    </button>
                   </td>
                 </tr>
               ))}

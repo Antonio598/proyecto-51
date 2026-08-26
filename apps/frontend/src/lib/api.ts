@@ -522,6 +522,7 @@ export const api = {
 
   // ── Facturas y complementos (módulo 11) ──
   listarFacturas: (polizaId: string) => request<any[]>(`/facturas?polizaId=${polizaId}`),
+  listarFacturasRecientes: () => request<any[]>('/facturas'),
   listarFacturasCliente: (clienteId: string) =>
     request<any[]>(`/facturas?clienteId=${clienteId}`),
   subirFactura: (polizaId: string, archivo: File, tipo: 'factura' | 'complemento') =>
@@ -535,6 +536,8 @@ export const api = {
   listarEndosos: () => request<any[]>('/endosos'),
   procesarEndoso: (archivo: File) => upload<any>('/endosos', archivo),
   aplicarEndoso: (id: string) => request<any>(`/endosos/${id}/aplicar`, { method: 'POST' }),
+  aplicarAltaEndoso: (id: string, data: { aseguradoraId: string; flotaId?: string }) =>
+    request<any>(`/endosos/${id}/aplicar-alta`, { method: 'POST', body: JSON.stringify(data) }),
 
   // ── Notas de crédito ──
   listarNotasCredito: () => request<any[]>('/notas-credito'),

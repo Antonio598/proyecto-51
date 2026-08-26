@@ -290,19 +290,27 @@ export class PolizasService {
     const s = serie.trim();
     if (!s) throw new BadRequestException('Escribe un número de serie');
 
-    const unidad = await this.prisma.unidad.findFirst({
-      where: { vin: { equals: s, mode: 'insensitive' } },
-      include: {
-        polizas: {
-          orderBy: { createdAt: 'desc' },
-          include: {
-            cliente: { select: { id: true, razonSocial: true, rfc: true } },
-            aseguradora: { select: { nombre: true } },
-            polizaMadre: { select: { id: true } },
-          },
+    const includePolizas = {
+      polizas: {
+        orderBy: { createdAt: 'desc' as const },
+        include: {
+          cliente: { select: { id: true, razonSocial: true, rfc: true } },
+          aseguradora: { select: { nombre: true } },
+          polizaMadre: { select: { id: true } },
         },
       },
-    });
+    };
+    // Coincidencia exacta primero; si no, por los últimos dígitos (termina en).
+    const unidad =
+      (await this.prisma.unidad.findFirst({
+        where: { vin: { equals: s, mode: 'insensitive' } },
+        include: includePolizas,
+      })) ??
+      (await this.prisma.unidad.findFirst({
+        where: { vin: { endsWith: s, mode: 'insensitive' } },
+        orderBy: { createdAt: 'desc' },
+        include: includePolizas,
+      }));
 
     if (!unidad || unidad.polizas.length === 0) {
       return { serie: s, encontrada: false as const };

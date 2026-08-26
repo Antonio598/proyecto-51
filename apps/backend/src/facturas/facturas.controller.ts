@@ -27,7 +27,8 @@ export class FacturasController {
   @Get()
   listar(@Query('polizaId') polizaId?: string, @Query('clienteId') clienteId?: string) {
     if (clienteId) return this.facturas.listarPorCliente(clienteId);
-    return this.facturas.listarPorPoliza(polizaId ?? '');
+    if (polizaId) return this.facturas.listarPorPoliza(polizaId);
+    return this.facturas.listarRecientes();
   }
 
   /**

@@ -1,5 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { EstadoPoliza, MovimientoEndoso, OrigenDocumento, TipoDocumento } from '@prisma/client';
+import {
+  EstadoPoliza,
+  MovimientoEndoso,
+  OrigenDocumento,
+  TipoDocumento,
+  TipoUnidad,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { ClaudeService } from '../ia/claude.service';
@@ -98,6 +104,21 @@ export class EndososService {
       diff: { movimiento: endoso.movimiento, serie, polizaEncontrada: !!poliza },
     });
 
+    // Para un ALTA sin póliza localizada, buscamos al cliente por RFC para poder
+    // crear la póliza hija (con su flota) desde el frontend.
+    const clienteAlta =
+      !poliza && endoso.movimiento === MovimientoEndoso.alta && rfc
+        ? await this.prisma.cliente.findUnique({
+            where: { rfc },
+            select: {
+              id: true,
+              razonSocial: true,
+              rfc: true,
+              flotas: { select: { id: true, nombre: true }, orderBy: { nombre: 'asc' } },
+            },
+          })
+        : null;
+
     return {
       endoso,
       lectura,
@@ -111,6 +132,7 @@ export class EndososService {
             polizaMadreId: poliza.polizaMadreId,
           }
         : null,
+      clienteAlta,
     };
   }
 
@@ -165,6 +187,94 @@ export class EndososService {
 
     this.logger.log(`Endoso ${endosoId} (${endoso.movimiento}) aplicado a póliza ${endoso.polizaId}`);
     return actualizado;
+  }
+
+  /**
+   * Aplica un ALTA creando una póliza hija nueva para el cliente (por RFC). Se le
+   * asigna la flota indicada (o la flota "General" del cliente), se marca como
+   * "alta reciente" y se agrega a la cobranza de su Póliza Madre.
+   */
+  async aplicarAlta(
+    endosoId: string,
+    datos: { aseguradoraId: string; flotaId?: string },
+    actorUserId: string,
+  ) {
+    const endoso = await this.prisma.endoso.findUnique({ where: { id: endosoId } });
+    if (!endoso) throw new NotFoundException('Endoso no encontrado');
+    if (endoso.aplicadoEn) throw new BadRequestException('Este endoso ya fue aplicado');
+    if (endoso.movimiento !== MovimientoEndoso.alta) {
+      throw new BadRequestException('Este movimiento no es un alta');
+    }
+    const rfc = normalizarRfc(endoso.rfc);
+    if (!rfc) throw new BadRequestException('El endoso no trae RFC para identificar al cliente');
+
+    const cliente = await this.prisma.cliente.findUnique({ where: { rfc } });
+    if (!cliente) {
+      throw new NotFoundException(`No hay un cliente con el RFC ${rfc}. Créalo antes de dar el alta.`);
+    }
+    const aseguradora = await this.prisma.aseguradora.findUnique({
+      where: { id: datos.aseguradoraId },
+    });
+    if (!aseguradora) throw new NotFoundException('Aseguradora no encontrada');
+
+    // Flota: la elegida (validada) o la "General" del cliente.
+    let flotaId = datos.flotaId ?? null;
+    if (flotaId) {
+      const flota = await this.prisma.flota.findFirst({
+        where: { id: flotaId, clienteId: cliente.id },
+      });
+      if (!flota) throw new BadRequestException('La flota no pertenece a este cliente');
+    } else {
+      flotaId = (await this.flotaGeneral(cliente.id)).id;
+    }
+
+    // Crear la unidad (por serie) y la póliza hija emitida marcada como alta.
+    const inicio = new Date();
+    const fin = new Date(inicio);
+    fin.setFullYear(fin.getFullYear() + 1);
+    const unidad = await this.prisma.unidad.create({
+      data: { clienteId: cliente.id, vin: endoso.serie, flotaId, tipo: TipoUnidad.otro },
+    });
+    const poliza = await this.prisma.poliza.create({
+      data: {
+        clienteId: cliente.id,
+        unidadId: unidad.id,
+        aseguradoraId: datos.aseguradoraId,
+        estado: EstadoPoliza.emitida,
+        altaPorEndoso: true,
+        prima: endoso.importe as never,
+        vigenciaInicio: inicio,
+        vigenciaFin: fin,
+      },
+    });
+
+    // Vincular a la Madre (cliente, flota, aseguradora) y refrescar cobranza.
+    const madreId = await this.polizasMadre.vincularHija(poliza.id);
+
+    const actualizado = await this.prisma.endoso.update({
+      where: { id: endosoId },
+      data: { polizaId: poliza.id, aplicadoEn: new Date() },
+    });
+
+    await this.audit.registrar({
+      entidad: 'Endoso',
+      entidadId: endosoId,
+      accion: 'aplicar_alta',
+      actorUserId,
+      diff: { clienteId: cliente.id, polizaId: poliza.id, flotaId, aseguradoraId: datos.aseguradoraId },
+    });
+
+    this.logger.log(`Alta por endoso ${endosoId}: póliza ${poliza.id} creada para ${cliente.razonSocial}`);
+    return { endoso: actualizado, polizaId: poliza.id, madreId };
+  }
+
+  /** Flota "General" del cliente (se crea si no existe) para altas sin flota. */
+  private async flotaGeneral(clienteId: string) {
+    const existente = await this.prisma.flota.findFirst({
+      where: { clienteId, nombre: 'General' },
+    });
+    if (existente) return existente;
+    return this.prisma.flota.create({ data: { clienteId, nombre: 'General' } });
   }
 
   /** Endosos recientes para la sección de altas/bajas. */

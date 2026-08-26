@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -37,5 +38,20 @@ export class EndososController {
   @Post(':id/aplicar')
   aplicar(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.endosos.aplicar(id, user.userId);
+  }
+
+  /** Aplica un ALTA creando una póliza hija nueva (por RFC) con su flota. */
+  @Roles(Rol.tecnico, Rol.administracion, Rol.admin)
+  @Post(':id/aplicar-alta')
+  aplicarAlta(
+    @Param('id') id: string,
+    @Body() body: { aseguradoraId: string; flotaId?: string },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.endosos.aplicarAlta(
+      id,
+      { aseguradoraId: body.aseguradoraId, flotaId: body.flotaId },
+      user.userId,
+    );
   }
 }

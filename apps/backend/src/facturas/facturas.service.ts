@@ -34,6 +34,20 @@ export class FacturasService {
     });
   }
 
+  /** Facturas recientes de todos los clientes (para la sección de Facturas). */
+  listarRecientes() {
+    return this.prisma.factura.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        cliente: { select: { id: true, razonSocial: true, rfc: true } },
+        poliza: {
+          select: { folio: true, cliente: { select: { id: true, razonSocial: true, rfc: true } } },
+        },
+      },
+    });
+  }
+
   /** Facturas del cliente: las ligadas directo por RFC y las de sus pólizas. */
   listarPorCliente(clienteId: string) {
     return this.prisma.factura.findMany({
