@@ -85,6 +85,14 @@ export default function ClienteDetallePage() {
     (typeof window !== 'undefined' ? getUsuario()?.rol : '') ?? '',
   );
   const [cliente, setCliente] = useState<any>(null);
+  const [editando, setEditando] = useState(false);
+  const [datosCliente, setDatosCliente] = useState({
+    razonSocial: '',
+    rfc: '',
+    contactoEmail: '',
+    whatsappNumber: '',
+    contactoNombre: '',
+  });
   const [unidades, setUnidades] = useState<any[]>([]);
   const [documentos, setDocumentos] = useState<any[]>([]);
   const [docAbierto, setDocAbierto] = useState<string | null>(null);
@@ -253,6 +261,34 @@ export default function ClienteDetallePage() {
     }
   }
 
+  function abrirEdicion() {
+    setDatosCliente({
+      razonSocial: cliente.razonSocial ?? '',
+      rfc: cliente.rfc ?? '',
+      contactoEmail: cliente.contactoEmail ?? '',
+      whatsappNumber: cliente.whatsappNumber ?? '',
+      contactoNombre: cliente.contactoNombre ?? '',
+    });
+    setEditando(true);
+  }
+
+  async function guardarCliente() {
+    setError('');
+    try {
+      await api.actualizarCliente(id, {
+        razonSocial: datosCliente.razonSocial || undefined,
+        rfc: datosCliente.rfc || undefined,
+        contactoEmail: datosCliente.contactoEmail || undefined,
+        whatsappNumber: datosCliente.whatsappNumber || undefined,
+        contactoNombre: datosCliente.contactoNombre || undefined,
+      });
+      setEditando(false);
+      await cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudieron guardar los datos');
+    }
+  }
+
   async function exportarUnidades() {
     setExportando(true);
     setAvisoFlota('');
@@ -279,19 +315,82 @@ export default function ClienteDetallePage() {
           {!cliente.activo && (
             <span className="badge bg-red-100 text-red-600">Inactivo</span>
           )}
-          {puedeEliminar && (
+          <div className="ml-auto flex gap-2">
             <button
-              onClick={eliminarCliente}
-              className="ml-auto rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              onClick={() => (editando ? setEditando(false) : abrirEdicion())}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              Eliminar cliente
+              {editando ? 'Cancelar' : 'Editar datos'}
             </button>
-          )}
+            {puedeEliminar && (
+              <button
+                onClick={eliminarCliente}
+                className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              >
+                Eliminar cliente
+              </button>
+            )}
+          </div>
         </div>
-        <p className="mt-1 text-sm text-slate-500">
-          {cliente.rfc ?? 'Sin RFC'} · WhatsApp: {cliente.whatsappNumber ?? '—'}
-          {cliente.contactoEmail ? ` · ${cliente.contactoEmail}` : ''}
-        </p>
+        {editando ? (
+          <div className="mt-3 grid gap-3 rounded-2xl bg-white p-4 shadow-tarjeta sm:grid-cols-2">
+            <label className="text-sm">
+              <span className="block text-slate-500">Razón social</span>
+              <input
+                value={datosCliente.razonSocial}
+                onChange={(e) => setDatosCliente({ ...datosCliente, razonSocial: e.target.value })}
+                className="input mt-1"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="block text-slate-500">RFC</span>
+              <input
+                value={datosCliente.rfc}
+                onChange={(e) =>
+                  setDatosCliente({ ...datosCliente, rfc: e.target.value.toUpperCase() })
+                }
+                className="input mt-1 uppercase"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="block text-slate-500">Correo electrónico</span>
+              <input
+                type="email"
+                value={datosCliente.contactoEmail}
+                onChange={(e) => setDatosCliente({ ...datosCliente, contactoEmail: e.target.value })}
+                placeholder="cliente@empresa.com"
+                className="input mt-1"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="block text-slate-500">Teléfono / WhatsApp</span>
+              <input
+                value={datosCliente.whatsappNumber}
+                onChange={(e) => setDatosCliente({ ...datosCliente, whatsappNumber: e.target.value })}
+                placeholder="+52…"
+                className="input mt-1"
+              />
+            </label>
+            <label className="text-sm sm:col-span-2">
+              <span className="block text-slate-500">Nombre de contacto</span>
+              <input
+                value={datosCliente.contactoNombre}
+                onChange={(e) => setDatosCliente({ ...datosCliente, contactoNombre: e.target.value })}
+                className="input mt-1"
+              />
+            </label>
+            <div className="sm:col-span-2">
+              <button onClick={guardarCliente} className="btn-primary">
+                Guardar cambios
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-1 text-sm text-slate-500">
+            {cliente.rfc ?? 'Sin RFC'} · WhatsApp: {cliente.whatsappNumber ?? '—'}
+            {cliente.contactoEmail ? ` · ${cliente.contactoEmail}` : ''}
+          </p>
+        )}
       </div>
 
       {/* Flota */}
