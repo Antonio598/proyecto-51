@@ -21,6 +21,7 @@ export default function EndososPage() {
   const [propuesta, setPropuesta] = useState<any>(null);
   const [altaAseg, setAltaAseg] = useState('');
   const [altaFlota, setAltaFlota] = useState('');
+  const [altaSerie, setAltaSerie] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -48,6 +49,7 @@ export default function EndososPage() {
       const res = await api.aplicarAltaEndoso(endosoId, {
         aseguradoraId: altaAseg,
         ...(altaFlota ? { flotaId: altaFlota } : {}),
+        ...(altaSerie.trim() ? { serie: altaSerie.trim() } : {}),
       });
       setPropuesta(null);
       setAltaAseg('');
@@ -76,6 +78,9 @@ export default function EndososPage() {
     try {
       const res = await api.procesarEndoso(archivo);
       setPropuesta(res);
+      setAltaAseg('');
+      setAltaFlota('');
+      setAltaSerie(res.endoso?.serie ?? '');
       await cargar();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al procesar el endoso');
@@ -193,7 +198,7 @@ export default function EndososPage() {
                 </Link>
               </div>
             </div>
-          ) : propuesta.endoso.movimiento === 'alta' && propuesta.clienteAlta ? (
+          ) : propuesta.clienteAlta ? (
             <div className="space-y-2 rounded border border-green-200 bg-green-50 px-3 py-3 text-sm">
               <div className="font-medium text-green-800">
                 Alta nueva para {propuesta.clienteAlta.razonSocial}
@@ -201,10 +206,19 @@ export default function EndososPage() {
               </div>
               <p className="text-slate-600">
                 No existe una póliza con esa serie: se creará una <strong>póliza hija nueva</strong>{' '}
-                para este cliente y se agregará a la cobranza de su Póliza Madre. Elige la aseguradora
-                y la flota (si no eliges flota, cae en “General”).
+                para este cliente y se agregará a la cobranza de su Póliza Madre. Confirma el número
+                de serie, elige la aseguradora y la flota (si no eliges flota, cae en “General”).
               </p>
               <div className="flex flex-wrap items-end gap-2">
+                <label className="text-xs">
+                  <span className="block text-slate-500">Número de serie (VIN)</span>
+                  <input
+                    value={altaSerie}
+                    onChange={(e) => setAltaSerie(e.target.value.toUpperCase())}
+                    placeholder="VIN de la unidad"
+                    className="mt-1 w-48 rounded border px-2 py-1.5 text-sm uppercase"
+                  />
+                </label>
                 <label className="text-xs">
                   <span className="block text-slate-500">Aseguradora</span>
                   <select
@@ -237,7 +251,7 @@ export default function EndososPage() {
                 </label>
                 <button
                   onClick={() => crearAlta(propuesta.endoso.id)}
-                  disabled={ocupado || !altaAseg}
+                  disabled={ocupado || !altaAseg || !altaSerie.trim()}
                   className="rounded bg-green-700 px-4 py-2 text-xs text-white disabled:opacity-50"
                 >
                   Crear alta y agregar a cobranza

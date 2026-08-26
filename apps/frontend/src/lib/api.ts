@@ -536,7 +536,7 @@ export const api = {
   listarEndosos: () => request<any[]>('/endosos'),
   procesarEndoso: (archivo: File) => upload<any>('/endosos', archivo),
   aplicarEndoso: (id: string) => request<any>(`/endosos/${id}/aplicar`, { method: 'POST' }),
-  aplicarAltaEndoso: (id: string, data: { aseguradoraId: string; flotaId?: string }) =>
+  aplicarAltaEndoso: (id: string, data: { aseguradoraId: string; flotaId?: string; serie?: string }) =>
     request<any>(`/endosos/${id}/aplicar-alta`, { method: 'POST', body: JSON.stringify(data) }),
 
   // ── Notas de crédito ──

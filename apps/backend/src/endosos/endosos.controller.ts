@@ -45,12 +45,12 @@ export class EndososController {
   @Post(':id/aplicar-alta')
   aplicarAlta(
     @Param('id') id: string,
-    @Body() body: { aseguradoraId: string; flotaId?: string },
+    @Body() body: { aseguradoraId: string; flotaId?: string; serie?: string },
     @CurrentUser() user: JwtUser,
   ) {
     return this.endosos.aplicarAlta(
       id,
-      { aseguradoraId: body.aseguradoraId, flotaId: body.flotaId },
+      { aseguradoraId: body.aseguradoraId, flotaId: body.flotaId, serie: body.serie },
       user.userId,
     );
   }

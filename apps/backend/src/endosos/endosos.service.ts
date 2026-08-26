@@ -104,10 +104,11 @@ export class EndososService {
       diff: { movimiento: endoso.movimiento, serie, polizaEncontrada: !!poliza },
     });
 
-    // Para un ALTA sin póliza localizada, buscamos al cliente por RFC para poder
-    // crear la póliza hija (con su flota) desde el frontend.
+    // Si no se localizó la póliza pero hay RFC, buscamos al cliente para poder
+    // crear la póliza hija del alta (con su flota) desde el frontend, sin importar
+    // cómo haya clasificado la IA el movimiento (se puede tratar como alta).
     const clienteAlta =
-      !poliza && endoso.movimiento === MovimientoEndoso.alta && rfc
+      !poliza && rfc
         ? await this.prisma.cliente.findUnique({
             where: { rfc },
             select: {
@@ -196,15 +197,12 @@ export class EndososService {
    */
   async aplicarAlta(
     endosoId: string,
-    datos: { aseguradoraId: string; flotaId?: string },
+    datos: { aseguradoraId: string; flotaId?: string; serie?: string },
     actorUserId: string,
   ) {
     const endoso = await this.prisma.endoso.findUnique({ where: { id: endosoId } });
     if (!endoso) throw new NotFoundException('Endoso no encontrado');
     if (endoso.aplicadoEn) throw new BadRequestException('Este endoso ya fue aplicado');
-    if (endoso.movimiento !== MovimientoEndoso.alta) {
-      throw new BadRequestException('Este movimiento no es un alta');
-    }
     const rfc = normalizarRfc(endoso.rfc);
     if (!rfc) throw new BadRequestException('El endoso no trae RFC para identificar al cliente');
 
@@ -228,12 +226,16 @@ export class EndososService {
       flotaId = (await this.flotaGeneral(cliente.id)).id;
     }
 
-    // Crear la unidad (por serie) y la póliza hija emitida marcada como alta.
+    // Crear la unidad (con su número de serie) y la póliza hija emitida (alta).
+    const serie = datos.serie?.trim() || endoso.serie || null;
+    if (!serie) {
+      throw new BadRequestException('Falta el número de serie (VIN) para dar de alta la unidad.');
+    }
     const inicio = new Date();
     const fin = new Date(inicio);
     fin.setFullYear(fin.getFullYear() + 1);
     const unidad = await this.prisma.unidad.create({
-      data: { clienteId: cliente.id, vin: endoso.serie, flotaId, tipo: TipoUnidad.otro },
+      data: { clienteId: cliente.id, vin: serie, flotaId, tipo: TipoUnidad.otro },
     });
     const poliza = await this.prisma.poliza.create({
       data: {
@@ -253,7 +255,12 @@ export class EndososService {
 
     const actualizado = await this.prisma.endoso.update({
       where: { id: endosoId },
-      data: { polizaId: poliza.id, aplicadoEn: new Date() },
+      data: {
+        polizaId: poliza.id,
+        serie,
+        movimiento: MovimientoEndoso.alta,
+        aplicadoEn: new Date(),
+      },
     });
 
     await this.audit.registrar({
