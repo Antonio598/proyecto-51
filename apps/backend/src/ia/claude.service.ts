@@ -122,6 +122,11 @@ PASO 3 — Reglas de llenado:
   es un error de captura de la aseguradora: placas = null.
 - Serie/VIN: exactamente 17 caracteres alfanuméricos. Si lees menos o más,
   devuelve null y agrega una nota. No "corrijas" caracteres.
+- Una unidad = un número de serie (VIN). Si el mismo VIN aparece en varias
+  filas, incisos o coberturas, es LA MISMA unidad: devuélvela UNA sola vez con
+  todos sus datos juntos, nunca repetida.
+- no_economico: extráelo SIEMPRE que aparezca (número económico de la unidad).
+  Si no aparece, null.
 - Sumas: captura por separado daños_materiales, robo_total, rc_terceros y
   la suma de adaptación/conversión. No las sumes ni promedies. Valores
   numéricos sin símbolo ni comas. "Amparado"/"Amparada" → string "AMPARADO".

@@ -62,12 +62,12 @@ function valorMostrable(u: Record<string, unknown>, campo: { key: string; fmt?: 
   return v != null && v !== '' ? String(v) : null;
 }
 
-/** Valor SIEMPRE mostrable: devuelve "—" cuando el dato no existe (nunca se oculta). */
+/** Valor SIEMPRE mostrable: devuelve "N/A" cuando el dato no existe (nunca se oculta). */
 function valorTexto(u: Record<string, unknown>, campo: { key: string; fmt?: Fmt }) {
   const v = u[campo.key];
   if (campo.fmt === 'bool') return v ? 'Sí' : 'No';
-  if (campo.fmt === 'moneda') return moneda(v) ?? '—';
-  return v != null && v !== '' ? String(v) : '—';
+  if (campo.fmt === 'moneda') return moneda(v) ?? 'N/A';
+  return v != null && v !== '' ? String(v) : 'N/A';
 }
 
 /** Lista completa de campos para la vista de tabla (todos, aunque estén vacíos). */

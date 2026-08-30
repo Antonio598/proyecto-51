@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDate,
   IsInt,
   IsNumber,
@@ -94,6 +95,21 @@ export class ActualizarCobranzaDto {
   @Min(1)
   @Max(60)
   numeroPagos?: number;
+}
+
+export class RenovarDto {
+  @IsString()
+  clienteId: string;
+
+  // Alcance por flota. Si viene `flotaId`, sólo esa flota; si `sinFlota` es true,
+  // las pólizas de unidades sin flota; si no viene ninguno, todas las del cliente.
+  @IsOptional()
+  @IsString()
+  flotaId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  sinFlota?: boolean;
 }
 
 export class MarcarEmitidaDto {

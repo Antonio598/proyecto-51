@@ -16,6 +16,45 @@ import { normalizarRfc } from '../clientes/rfc.util';
 /** Debajo de este umbral, el campo se marca para revisión humana obligatoria. */
 export const UMBRAL_CONFIANZA = 0.8;
 
+/** Normaliza un VIN/serie para comparar: mayúsculas, sin espacios ni guiones. */
+export function normalizarSerie(s: string | null | undefined): string {
+  return (s ?? '').replace(/[\s-]/g, '').toUpperCase();
+}
+
+/** Un valor "vacío" a efectos de fusión: sin dato o el default booleano/falso. */
+function esVacio(v: unknown): boolean {
+  return v === null || v === undefined || v === '' || v === false;
+}
+
+/**
+ * Fusiona dos lecturas de la MISMA unidad (mismo VIN): conserva el primer valor
+ * no vacío de cada campo y rellena los huecos con la lectura nueva. Un número de
+ * serie = una unidad, así que distintos archivos/coberturas aportan campos que se
+ * concentran en una sola unidad en vez de duplicarla.
+ */
+function fusionarUnidad(base: UnidadExtraida, extra: UnidadExtraida): UnidadExtraida {
+  const out = { ...base } as Record<string, unknown>;
+  for (const [clave, valor] of Object.entries(extra)) {
+    if (clave === 'confianza') continue;
+    if (clave === 'dobleRemolque') {
+      out.dobleRemolque = base.dobleRemolque || extra.dobleRemolque;
+      continue;
+    }
+    if (esVacio(out[clave]) && !esVacio(valor)) out[clave] = valor;
+  }
+  out.confianza = { ...extra.confianza, ...base.confianza };
+  return out as unknown as UnidadExtraida;
+}
+
+/** Rellena en `base` los campos vacíos con los de `extra` (mismo criterio de fusión). */
+function rellenarVacios<T extends Record<string, unknown>>(base: T, extra: Record<string, unknown>): T {
+  const out = { ...base } as Record<string, unknown>;
+  for (const [clave, valor] of Object.entries(extra)) {
+    if (esVacio(out[clave]) && !esVacio(valor)) out[clave] = valor;
+  }
+  return out as T;
+}
+
 @Injectable()
 export class DocumentosService {
   private readonly logger = new Logger(DocumentosService.name);
@@ -216,6 +255,9 @@ export class DocumentosService {
     actorUserId?: string,
   ) {
     const unidades: UnidadExtraida[] = [];
+    // Índice de fusión: clave (VIN normalizado, o económico si no hay VIN) → posición
+    // en `unidades`, para concentrar en una sola unidad las lecturas del mismo VIN.
+    const indicePorClave = new Map<string, number>();
     const notas: string[] = [];
     const fallidos: string[] = [];
     // JSON crudo por archivo (clasificación, sumas separadas, evidencia, conflictos).
@@ -246,7 +288,20 @@ export class DocumentosService {
         // No se inventa flota a partir del nombre del archivo: las flotas las
         // crea el administrador. Sólo se conserva la flota si la IA la leyó.
         for (const u of resultado.unidades) {
-          unidades.push({ ...u, flotaNombre: u.flotaNombre?.trim() || null });
+          const unidad = { ...u, flotaNombre: u.flotaNombre?.trim() || null };
+          // Un VIN = una misma unidad: si ya vimos esta serie (o número económico
+          // cuando no hay serie), fusionamos los datos en la unidad existente en
+          // vez de duplicarla.
+          const clave =
+            normalizarSerie(unidad.vin) ||
+            (unidad.numeroEconomico ? `ECO:${unidad.numeroEconomico.trim().toUpperCase()}` : '');
+          const idx = clave ? indicePorClave.get(clave) : undefined;
+          if (idx !== undefined) {
+            unidades[idx] = fusionarUnidad(unidades[idx], unidad);
+          } else {
+            if (clave) indicePorClave.set(clave, unidades.length);
+            unidades.push(unidad);
+          }
         }
         if (resultado.notas?.trim()) {
           notas.push(
@@ -458,6 +513,9 @@ export class DocumentosService {
     const nuevas: Prisma.UnidadCreateManyInput[] = [];
     const actualizaciones: Array<{ id: string; datos: ReturnType<typeof datosDe> }> = [];
     const usados = new Set<string>();
+    // VIN normalizado → índice en `nuevas`, para no crear dos unidades nuevas con
+    // el mismo número de serie (red de seguridad si la revisión trae duplicados).
+    const nuevaPorVin = new Map<string, number>();
     for (const u of unidadesCorregidas) {
       const vin = u.vin?.trim();
       const eco = u.numeroEconomico?.trim();
@@ -468,7 +526,15 @@ export class DocumentosService {
       if (existenteId && !usados.has(existenteId)) {
         usados.add(existenteId);
         actualizaciones.push({ id: existenteId, datos });
+        continue;
+      }
+      const claveVin = normalizarSerie(vin);
+      const idxNueva = claveVin ? nuevaPorVin.get(claveVin) : undefined;
+      if (idxNueva !== undefined) {
+        // Mismo VIN que otra unidad nueva ya encolada: fusionar en vez de duplicar.
+        nuevas[idxNueva] = rellenarVacios(nuevas[idxNueva], datos);
       } else {
+        if (claveVin) nuevaPorVin.set(claveVin, nuevas.length);
         nuevas.push({
           clienteId,
           ...datos,

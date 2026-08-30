@@ -26,6 +26,7 @@ const ICONOS: Record<string, string> = {
   expedientes: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',
   polizas: 'M9 12l2 2 4-4 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   cobranza: 'M12 1v22 M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  metricas: 'M3 3v18h18 M7 15l4-4 3 3 5-6',
   pagos: 'M1 4h22v16H1z M1 10h22',
   usuarios: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
 };
@@ -37,6 +38,7 @@ const NAV: { href: string; label: string; icono: string }[] = [
   { href: '/polizas', label: 'Pólizas', icono: 'polizas' },
   { href: '/endosos', label: 'Endosos (altas/bajas)', icono: 'documentos' },
   { href: '/consulta', label: 'Consulta de vigencia', icono: 'polizas' },
+  { href: '/metricas', label: 'Métricas', icono: 'metricas' },
   { href: '/cobranza', label: 'Cobranza', icono: 'cobranza' },
   { href: '/recordatorios', label: 'Recordatorios', icono: 'cobranza' },
   { href: '/facturas', label: 'Facturas', icono: 'pagos' },

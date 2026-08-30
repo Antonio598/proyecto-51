@@ -25,6 +25,7 @@ import { HealthModule } from './health/health.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { PortalModule } from './portal/portal.module';
+import { MetricasModule } from './metricas/metricas.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 
@@ -56,6 +57,7 @@ import { RolesGuard } from './auth/roles.guard';
     BootstrapModule,
     UsuariosModule,
     PortalModule,
+    MetricasModule,
   ],
   providers: [
     // JWT global: todos los endpoints exigen token salvo los marcados @Public().

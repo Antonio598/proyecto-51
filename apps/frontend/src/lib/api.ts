@@ -16,6 +16,15 @@ export interface UsuarioSesion {
   rol: string;
 }
 
+export interface MetricasResumen {
+  primaNetaTotal: number;
+  polizasActivas: number;
+  anio: number;
+  porMes: Array<{ mes: string; acumulado: number }>;
+  noVigentes: { cantidad: number; primaNeta: number };
+  vencidasPorPago: { cantidad: number; madres: number; monto: number };
+}
+
 export function guardarSesion(token: string, user: UsuarioSesion) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -513,6 +522,12 @@ export const api = {
     request<any>(`/polizas/expediente/${expedienteId}/checklist`),
   marcarPolizaEmitida: (id: string, data: Record<string, unknown>) =>
     request<any>(`/polizas/${id}/emitida`, { method: 'POST', body: JSON.stringify(data) }),
+  /** Renueva (reemite) las pólizas emitidas de un cliente/flota con nueva vigencia. */
+  renovarPolizas: (data: { clienteId: string; flotaId?: string; sinFlota?: boolean }) =>
+    request<{ renovadas: number }>('/polizas/renovar', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   /** Sube el PDF de la póliza; devuelve la sugerencia de folio leída por Claude. */
   subirPdfPoliza: (id: string, archivo: File) =>
     upload<{ documentoId: string; sugerencia: { folio: string | null } }>(
@@ -547,6 +562,9 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ facturaId }),
     }),
+
+  // ── Métricas ──
+  metricasResumen: () => request<MetricasResumen>('/metricas/resumen'),
 
   // ── Cobranza ──
   dashboardCobranza: () => request<any>('/cobranza/dashboard'),

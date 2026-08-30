@@ -116,6 +116,32 @@ export default function PolizasPage() {
     }
   }
 
+  /** Renueva (reemite) todas las pólizas emitidas de un grupo (cliente/flota). */
+  async function renovarGrupo(flotaNombre: string, grupo: any[]) {
+    const clienteId = grupo[0]?.clienteId ?? clienteSel?.id;
+    const emitidas = grupo.filter((p) => p.estado === 'emitida').length;
+    if (!clienteId || emitidas === 0) return;
+    const sinFlota = flotaNombre === 'Sin flota asignada';
+    const flotaId = sinFlota ? undefined : grupo[0]?.unidad?.flota?.id;
+    if (
+      !confirm(
+        `¿Renovar ${emitidas} póliza(s) de "${flotaNombre}"? Se les fijará una nueva vigencia de 1 año desde hoy y volverán a contar en Métricas.`,
+      )
+    )
+      return;
+    setOcupado(true);
+    setError('');
+    try {
+      const res = await api.renovarPolizas({ clienteId, flotaId, sinFlota });
+      setMensaje(`Se renovaron ${res.renovadas} póliza(s). Vuelven a contar en Métricas.`);
+      await cargarPolizas(clienteId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   const filaPoliza = (p: any) => (
     <tr key={p.id} className="border-t">
       <td className="px-3 py-2">
@@ -318,6 +344,15 @@ export default function PolizasPage() {
                   <span className="rounded bg-marca-suave px-2 py-0.5 text-xs text-marca">
                     {grupo.length}
                   </span>
+                  {grupo.some((p) => p.estado === 'emitida') && (
+                    <button
+                      onClick={() => renovarGrupo(flota, grupo)}
+                      disabled={ocupado}
+                      className="ml-auto rounded border border-marca px-2.5 py-1 text-xs text-marca hover:bg-marca-suave disabled:opacity-50"
+                    >
+                      Renovar
+                    </button>
+                  )}
                 </h3>
                 <div className="overflow-x-auto rounded-lg bg-white shadow">
                   <table className="w-full text-sm">

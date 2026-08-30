@@ -3,6 +3,7 @@ import {
   EstadoExpediente,
   EstadoPoliza,
   OrigenDocumento,
+  Prisma,
   Rol,
   TipoDocumento,
 } from '@prisma/client';
@@ -475,6 +476,63 @@ export class PolizasService {
     });
 
     return poliza;
+  }
+
+  /**
+   * Renovación por cliente/flota: reemisión de las pólizas emitidas del alcance.
+   * Toda póliza vive 1 año desde su emisión; al renovar se les fija una nueva
+   * vigencia (hoy … hoy + 1 año), por lo que vuelven a contar en las métricas.
+   * Es como reemitir: todo queda renovado de golpe.
+   */
+  async renovar(
+    scope: { clienteId: string; flotaId?: string; sinFlota?: boolean },
+    actorUserId: string,
+  ) {
+    const hoy = new Date();
+    const vigenciaFin = new Date(hoy);
+    vigenciaFin.setFullYear(vigenciaFin.getFullYear() + 1);
+
+    const where: Prisma.PolizaWhereInput = {
+      clienteId: scope.clienteId,
+      estado: EstadoPoliza.emitida,
+      canceladaEn: null,
+    };
+    if (scope.sinFlota) {
+      where.unidad = { flotaId: null };
+    } else if (scope.flotaId) {
+      where.unidad = { flotaId: scope.flotaId };
+    }
+
+    const hijas = await this.prisma.poliza.findMany({ where, select: { id: true } });
+    if (hijas.length === 0) {
+      throw new BadRequestException('No hay pólizas emitidas para renovar en este grupo.');
+    }
+
+    for (const h of hijas) {
+      await this.prisma.poliza.update({
+        where: { id: h.id },
+        data: { vigenciaInicio: hoy, vigenciaFin },
+      });
+      // Reasocia la hija a su Madre y recalcula totales (reactiva la cobranza).
+      await this.polizasMadre.vincularHija(h.id);
+    }
+
+    await this.audit.registrar({
+      entidad: 'Cliente',
+      entidadId: scope.clienteId,
+      accion: 'renovar_polizas',
+      actorUserId,
+      diff: {
+        flotaId: scope.flotaId ?? null,
+        sinFlota: scope.sinFlota ?? false,
+        renovadas: hijas.length,
+        vigenciaInicio: hoy,
+        vigenciaFin,
+      },
+    });
+
+    this.logger.log(`Renovadas ${hijas.length} pólizas del cliente ${scope.clienteId}`);
+    return { renovadas: hijas.length, vigenciaInicio: hoy, vigenciaFin };
   }
 
   /**

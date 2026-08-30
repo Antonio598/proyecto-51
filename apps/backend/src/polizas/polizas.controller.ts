@@ -21,6 +21,7 @@ import {
   CrearPorEnlaceDto,
   MarcarEmitidaDto,
   PrepararEmisionDto,
+  RenovarDto,
 } from './dto/poliza.dto';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
@@ -105,6 +106,13 @@ export class PolizasController {
       },
       user.userId,
     );
+  }
+
+  /** Renovación por cliente/flota: reemite las pólizas del grupo con nueva vigencia. */
+  @Roles(Rol.administracion, Rol.admin)
+  @Post('renovar')
+  renovar(@Body() dto: RenovarDto, @CurrentUser() user: JwtUser) {
+    return this.polizas.renovar(dto, user.userId);
   }
 
   /** Corrige o agrega la liga de nube de una póliza. */
