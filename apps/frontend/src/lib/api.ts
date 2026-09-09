@@ -528,6 +528,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /** Alta por lote: sube varios PDF/carpeta; la IA los liga por VIN y los emite. */
+  subirPolizasLote: (archivos: File[], clienteId?: string) =>
+    uploadFiles<{
+      total: number;
+      ligadas: number;
+      resultados: Array<{
+        archivo: string;
+        vin: string | null;
+        polizaId: string | null;
+        estado: string;
+        detalle?: string;
+      }>;
+    }>('/polizas/subir-lote', archivos, clienteId ? { clienteId } : {}),
   /** Sube el PDF de la póliza; devuelve la sugerencia de folio leída por Claude. */
   subirPdfPoliza: (id: string, archivo: File) =>
     upload<{ documentoId: string; sugerencia: { folio: string | null } }>(
@@ -584,6 +597,8 @@ export const api = {
     request<any>(`/cobranza/madres/${id}/plan`, { method: 'PATCH', body: JSON.stringify(data) }),
   marcarPagadoMadre: (id: string) =>
     request<any>(`/cobranza/madres/${id}/pagar`, { method: 'POST' }),
+  deshacerPagoMadre: (id: string) =>
+    request<any>(`/cobranza/madres/${id}/deshacer-pago`, { method: 'POST' }),
   editarVencimientoMadre: (id: string, num: number, fecha: string) =>
     request<any>(`/cobranza/madres/${id}/parcialidad/${num}/vencimiento`, {
       method: 'PATCH',

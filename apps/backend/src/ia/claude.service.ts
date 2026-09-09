@@ -381,23 +381,37 @@ export class ClaudeService {
   async extraerFolioPoliza(
     contenido: Buffer,
     mime: string,
-  ): Promise<{ folio: string | null; vigenciaInicio: string | null; vigenciaFin: string | null }> {
+  ): Promise<{
+    folio: string | null;
+    vigenciaInicio: string | null;
+    vigenciaFin: string | null;
+    serie: string | null;
+    prima: number | null;
+  }> {
     const respuesta = await this.client.messages.create({
       model: this.modelo,
       max_tokens: 4000,
       system:
-        'Extraes datos de carátulas de pólizas de seguro mexicanas. Si un dato no aparece, devuelve null. No inventes folios.',
+        'Extraes datos de carátulas de pólizas de seguro mexicanas. Si un dato no aparece, devuelve null. No inventes folios ni números de serie.',
       output_config: {
         format: {
           type: 'json_schema',
           schema: {
             type: 'object',
             properties: {
-              folio: { type: 'string', description: 'Número o folio de la póliza' },
-              vigenciaInicio: { type: 'string', description: 'Fecha ISO YYYY-MM-DD' },
-              vigenciaFin: { type: 'string', description: 'Fecha ISO YYYY-MM-DD' },
+              folio: { type: ['string', 'null'], description: 'Número o folio de la póliza' },
+              vigenciaInicio: { type: ['string', 'null'], description: 'Fecha ISO YYYY-MM-DD' },
+              vigenciaFin: { type: ['string', 'null'], description: 'Fecha ISO YYYY-MM-DD' },
+              serie: {
+                type: ['string', 'null'],
+                description: 'Número de serie / VIN de la unidad asegurada (17 caracteres)',
+              },
+              prima: {
+                type: ['number', 'null'],
+                description: 'Prima total anual de la póliza, sin símbolo ni comas',
+              },
             },
-            required: ['folio', 'vigenciaInicio', 'vigenciaFin'],
+            required: ['folio', 'vigenciaInicio', 'vigenciaFin', 'serie', 'prima'],
             additionalProperties: false,
           },
         },
@@ -407,7 +421,10 @@ export class ClaudeService {
           role: 'user',
           content: [
             this.construirBloqueDocumento(contenido, mime, 'poliza'),
-            { type: 'text', text: 'Extrae el folio y la vigencia de esta póliza.' },
+            {
+              type: 'text',
+              text: 'Extrae el folio, la vigencia, el número de serie (VIN) de la unidad y la prima total de esta póliza.',
+            },
           ],
         },
       ],

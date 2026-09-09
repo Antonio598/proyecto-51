@@ -265,6 +265,65 @@ export class PolizasMadreService {
     return { pagada: corte.numeroParcialidad, siguiente };
   }
 
+  /**
+   * Deshace el último "marcar como pagado": regresa la parcialidad pagada más
+   * reciente a pendiente y elimina la siguiente que se abrió por ese pago (si
+   * sigue vacía). No permite deshacer si la parcialidad tiene un pago conciliado
+   * (un `Pago` real), para no borrar información de un pago registrado.
+   */
+  async revertirUltimoPago(madreId: string, actorUserId: string) {
+    await this.obtener(madreId);
+
+    const ultima = await this.prisma.corteMadre.findFirst({
+      where: { polizaMadreId: madreId, estado: EstadoCobranza.pagado },
+      orderBy: { numeroParcialidad: 'desc' },
+      include: { pagos: true },
+    });
+    if (!ultima) {
+      throw new BadRequestException('No hay pagos que deshacer en esta Póliza Madre');
+    }
+    if (ultima.pagos.length > 0) {
+      throw new BadRequestException(
+        'Esta parcialidad tiene un pago conciliado registrado; no se puede deshacer aquí.',
+      );
+    }
+
+    // Elimina la parcialidad siguiente si se abrió por este pago y sigue vacía.
+    const siguiente = await this.prisma.corteMadre.findUnique({
+      where: {
+        polizaMadreId_numeroParcialidad: {
+          polizaMadreId: madreId,
+          numeroParcialidad: ultima.numeroParcialidad + 1,
+        },
+      },
+      include: { pagos: true },
+    });
+    if (siguiente && siguiente.estado !== EstadoCobranza.pagado && siguiente.pagos.length === 0) {
+      await this.prisma.corteMadre.delete({ where: { id: siguiente.id } });
+    }
+
+    // Regresa la parcialidad a pendiente, recalculando su estado por la fecha.
+    const estado =
+      ultima.fechaVencimiento < new Date() ? EstadoCobranza.vencido : EstadoCobranza.vigente;
+    await this.prisma.corteMadre.update({
+      where: { id: ultima.id },
+      data: { estado, pagadoEn: null },
+    });
+
+    await this.audit.registrar({
+      entidad: 'PolizaMadre',
+      entidadId: madreId,
+      accion: 'deshacer_pago',
+      actorUserId,
+      diff: { parcialidad: ultima.numeroParcialidad } as Prisma.InputJsonValue,
+    });
+
+    this.logger.log(
+      `Madre ${madreId}: deshecho el pago de la parcialidad ${ultima.numeroParcialidad}`,
+    );
+    return { revertida: ultima.numeroParcialidad };
+  }
+
   /** Detalle completo de la Madre: totales, calendario, hijas y pagos. */
   async detalle(madreId: string) {
     const madre = await this.prisma.polizaMadre.findUnique({

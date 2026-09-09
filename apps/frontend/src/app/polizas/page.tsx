@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -46,6 +46,10 @@ export default function PolizasPage() {
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const [subiendoLote, setSubiendoLote] = useState(false);
+  const [resultadoLote, setResultadoLote] = useState<any>(null);
+  const loteRef = useRef<HTMLInputElement>(null);
+  const carpetaRef = useRef<HTMLInputElement>(null);
 
   const cargarClientes = useCallback(async () => {
     try {
@@ -139,6 +143,33 @@ export default function PolizasPage() {
       setError(err instanceof Error ? err.message : 'Error');
     } finally {
       setOcupado(false);
+    }
+  }
+
+  async function subirLote(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (loteRef.current) loteRef.current.value = '';
+    if (carpetaRef.current) carpetaRef.current.value = '';
+    const pdfs = files.filter(
+      (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'),
+    );
+    if (pdfs.length === 0) {
+      setError('Selecciona archivos PDF de pólizas.');
+      return;
+    }
+    setSubiendoLote(true);
+    setError('');
+    setMensaje('');
+    setResultadoLote(null);
+    try {
+      const res = await api.subirPolizasLote(pdfs, clienteSel?.id);
+      setResultadoLote(res);
+      setMensaje(`Se ligaron ${res.ligadas} de ${res.total} póliza(s) por número de serie.`);
+      await cargarPolizas(clienteSel?.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    } finally {
+      setSubiendoLote(false);
     }
   }
 
@@ -296,6 +327,71 @@ export default function PolizasPage() {
               <Link href={`/clientes/${clienteSel.id}`} className="text-sm text-marca">
                 Ver perfil →
               </Link>
+            </div>
+          )}
+
+          {/* Alta de pólizas por lote: la IA las liga por número de serie y las emite. */}
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 shadow">
+            <span className="text-sm font-medium text-slate-700">Subir pólizas (PDF):</span>
+            <button
+              onClick={() => loteRef.current?.click()}
+              disabled={subiendoLote}
+              className="rounded bg-marca px-3 py-1.5 text-xs text-white disabled:opacity-50"
+            >
+              {subiendoLote ? 'Procesando…' : 'Elegir archivos'}
+            </button>
+            <button
+              onClick={() => carpetaRef.current?.click()}
+              disabled={subiendoLote}
+              className="rounded border border-marca px-3 py-1.5 text-xs text-marca hover:bg-marca-suave disabled:opacity-50"
+            >
+              Elegir carpeta
+            </button>
+            <span className="text-xs text-slate-400">
+              La IA lee cada PDF, lo liga a su póliza por el número de serie y la marca emitida.
+            </span>
+            <input
+              ref={loteRef}
+              type="file"
+              accept="application/pdf"
+              multiple
+              onChange={subirLote}
+              className="hidden"
+            />
+            <input
+              ref={carpetaRef}
+              type="file"
+              accept="application/pdf"
+              multiple
+              onChange={subirLote}
+              className="hidden"
+              {...({ webkitdirectory: '', directory: '' } as any)}
+            />
+          </div>
+
+          {resultadoLote && (
+            <div className="rounded-lg bg-white p-3 text-sm shadow">
+              <div className="mb-1 font-medium">
+                Resultado: {resultadoLote.ligadas}/{resultadoLote.total} ligadas
+              </div>
+              <ul className="space-y-1">
+                {resultadoLote.resultados.map((r: any, i: number) => (
+                  <li key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className={`rounded px-1.5 py-0.5 ${
+                        r.estado === 'emitida' || r.estado === 'actualizada'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {r.estado}
+                    </span>
+                    <span className="text-slate-600">{r.archivo}</span>
+                    {r.vin && <span className="text-slate-400">VIN {r.vin}</span>}
+                    {r.detalle && <span className="text-red-500">{r.detalle}</span>}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

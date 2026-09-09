@@ -13,6 +13,7 @@ import { ClaudeService } from '../ia/claude.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { PolizasMadreService } from '../cobranza/polizas-madre.service';
+import { normalizarSerie } from '../common/serie.util';
 
 /** Días naturales entre cortes de cobranza. */
 export const DIAS_ENTRE_CORTES = 30;
@@ -592,6 +593,119 @@ export class PolizasService {
     });
 
     return { documentoId: documento.id, sugerencia: extraido };
+  }
+
+  /**
+   * Alta de pólizas por lote: la IA lee cada PDF, obtiene el número de serie (VIN)
+   * y liga el archivo a la póliza correcta de ese VIN, capturando folio/vigencia/
+   * prima y marcándola emitida (arranca su cobranza). Acepta varios archivos o una
+   * carpeta. Devuelve un resumen por archivo (incluidos los que no casaron).
+   */
+  async subirLote(
+    archivos: Array<{ buffer: Buffer; nombre: string; mime: string }>,
+    scope: { clienteId?: string },
+    actorUserId: string,
+  ) {
+    type Resultado = {
+      archivo: string;
+      vin: string | null;
+      polizaId: string | null;
+      estado: 'emitida' | 'actualizada' | 'sin_serie' | 'sin_coincidencia' | 'error';
+      detalle?: string;
+    };
+    const resultados: Resultado[] = [];
+
+    for (const archivo of archivos) {
+      try {
+        // 1. Leer folio, vigencia, serie y prima con la IA.
+        const extraido = await this.claude.extraerFolioPoliza(archivo.buffer, archivo.mime);
+        const vinN = normalizarSerie(extraido.serie);
+        if (!vinN) {
+          resultados.push({ archivo: archivo.nombre, vin: null, polizaId: null, estado: 'sin_serie' });
+          continue;
+        }
+
+        // 2. Localizar la póliza por el VIN de su unidad (opcionalmente del cliente).
+        //    Se normaliza en memoria para tolerar espacios/guiones/mayúsculas.
+        const candidatas = await this.prisma.poliza.findMany({
+          where: {
+            ...(scope.clienteId ? { clienteId: scope.clienteId } : {}),
+            estado: { not: EstadoPoliza.cancelada },
+          },
+          include: { unidad: { select: { vin: true } } },
+          orderBy: { createdAt: 'desc' },
+        });
+        const poliza = candidatas.find((p) => normalizarSerie(p.unidad.vin) === vinN);
+        if (!poliza) {
+          resultados.push({
+            archivo: archivo.nombre,
+            vin: extraido.serie,
+            polizaId: null,
+            estado: 'sin_coincidencia',
+          });
+          continue;
+        }
+
+        // 3. Adjuntar el PDF a esa póliza.
+        await this.adjuntarPdf(poliza.id, archivo, actorUserId);
+
+        // 4. Fechas: si viene inicio pero no fin, se deriva a 1 año (vigencia estándar).
+        const vigenciaInicio = extraido.vigenciaInicio ? new Date(extraido.vigenciaInicio) : undefined;
+        let vigenciaFin = extraido.vigenciaFin ? new Date(extraido.vigenciaFin) : undefined;
+        if (vigenciaInicio && !vigenciaFin) {
+          vigenciaFin = new Date(vigenciaInicio);
+          vigenciaFin.setFullYear(vigenciaFin.getFullYear() + 1);
+        }
+        const datos = {
+          folio: extraido.folio ?? undefined,
+          vigenciaInicio,
+          vigenciaFin,
+          prima: extraido.prima ?? undefined,
+        };
+
+        if (poliza.estado === EstadoPoliza.emitida) {
+          // Ya emitida: solo se actualizan folio/vigencia/prima con lo leído.
+          await this.prisma.poliza.update({
+            where: { id: poliza.id },
+            data: {
+              ...(datos.folio ? { folio: datos.folio } : {}),
+              ...(vigenciaInicio ? { vigenciaInicio } : {}),
+              ...(vigenciaFin ? { vigenciaFin } : {}),
+              ...(datos.prima != null ? { prima: datos.prima as never } : {}),
+            },
+          });
+          resultados.push({
+            archivo: archivo.nombre,
+            vin: extraido.serie,
+            polizaId: poliza.id,
+            estado: 'actualizada',
+          });
+        } else {
+          // Pendiente: marcar emitida (arranca cobranza) con los datos leídos.
+          await this.marcarEmitida(poliza.id, datos, actorUserId);
+          resultados.push({
+            archivo: archivo.nombre,
+            vin: extraido.serie,
+            polizaId: poliza.id,
+            estado: 'emitida',
+          });
+        }
+      } catch (err) {
+        resultados.push({
+          archivo: archivo.nombre,
+          vin: null,
+          polizaId: null,
+          estado: 'error',
+          detalle: (err as Error).message,
+        });
+      }
+    }
+
+    const ligadas = resultados.filter(
+      (r) => r.estado === 'emitida' || r.estado === 'actualizada',
+    ).length;
+    this.logger.log(`Alta de pólizas por lote: ${ligadas}/${archivos.length} ligadas`);
+    return { total: archivos.length, ligadas, resultados };
   }
 
   /** Periodo de cobranza en formato AAAA-MM. */

@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import PDFDocument from 'pdfkit';
 
 export interface Seccion {
@@ -17,6 +19,12 @@ export interface DocumentoPdf {
 const MARCA = '#0f3d63';
 const GRIS = '#64748b';
 const BORDE = '#cbd5e1';
+
+// Logo de ARC (copiado a dist/assets por nest-cli). Funciona en dev y en build:
+// __dirname es src/generacion o dist/generacion; el logo vive en ../assets.
+const LOGO = join(__dirname, '..', 'assets', 'arc-navy.png');
+const LOGO_ANCHO = 120;
+const LOGO_ALTO = 38;
 
 /**
  * Generación de PDF con pdfkit (sin navegador ni binarios externos,
@@ -43,22 +51,52 @@ export class PdfService {
   }
 
   private encabezado(pdf: PDFKit.PDFDocument, doc: DocumentoPdf) {
-    pdf.fillColor(MARCA).fontSize(18).font('Helvetica-Bold').text(doc.titulo);
-    if (doc.subtitulo) {
-      pdf.moveDown(0.2).fillColor(GRIS).fontSize(10).font('Helvetica').text(doc.subtitulo);
+    const izquierda = pdf.page.margins.left;
+    const derecha = pdf.page.width - pdf.page.margins.right;
+    const yInicio = pdf.y;
+
+    // Logo a la izquierda (si existe el asset); el título ocupa el resto del ancho.
+    let xTexto = izquierda;
+    let anchoTexto = derecha - izquierda;
+    if (existsSync(LOGO)) {
+      try {
+        pdf.image(LOGO, izquierda, yInicio, { fit: [LOGO_ANCHO, LOGO_ALTO] });
+        xTexto = izquierda + LOGO_ANCHO + 16;
+        anchoTexto = derecha - xTexto;
+      } catch {
+        /* si el logo no se puede leer, seguimos sin él */
+      }
     }
+
     pdf
-      .moveDown(0.5)
+      .fillColor(MARCA)
+      .fontSize(17)
+      .font('Helvetica-Bold')
+      .text(doc.titulo, xTexto, yInicio, { width: anchoTexto });
+    if (doc.subtitulo) {
+      pdf
+        .moveDown(0.2)
+        .fillColor(GRIS)
+        .fontSize(10)
+        .font('Helvetica')
+        .text(doc.subtitulo, xTexto, pdf.y, { width: anchoTexto });
+    }
+
+    // La línea va debajo de lo más alto entre el logo y el bloque de texto.
+    const yLinea = Math.max(pdf.y, yInicio + LOGO_ALTO) + 8;
+    pdf
       .strokeColor(MARCA)
       .lineWidth(1.5)
-      .moveTo(pdf.page.margins.left, pdf.y)
-      .lineTo(pdf.page.width - pdf.page.margins.right, pdf.y)
+      .moveTo(izquierda, yLinea)
+      .lineTo(derecha, yLinea)
       .stroke();
-    pdf.moveDown(1);
+    pdf.x = izquierda;
+    pdf.y = yLinea + 14;
   }
 
   private seccion(pdf: PDFKit.PDFDocument, seccion: Seccion) {
     this.saltoSiNecesario(pdf, 60);
+    pdf.x = pdf.page.margins.left;
     pdf.fillColor(MARCA).fontSize(12).font('Helvetica-Bold').text(seccion.titulo);
     pdf.moveDown(0.4);
 
@@ -97,6 +135,10 @@ export class PdfService {
       );
     };
 
+    // Importes/porcentajes se alinean a la derecha (salvo la primera columna).
+    const alineacion = (celda: string, i: number): 'left' | 'right' =>
+      i > 0 && /^[-$]?\s*[\d.,]+\s*%?$|^\$/.test((celda || '').trim()) ? 'right' : 'left';
+
     const dibujarFila = (celdas: string[], negrita: boolean, fondo?: string) => {
       const alto = alturaFila(celdas, negrita);
       this.saltoSiNecesario(pdf, alto);
@@ -109,7 +151,10 @@ export class PdfService {
       celdas.forEach((celda, i) => {
         pdf
           .fillColor(negrita ? '#ffffff' : '#1e293b')
-          .text(celda || '—', xDe(i) + 6, y + 5, { width: anchoDe(i) - 12 });
+          .text(celda || '—', xDe(i) + 6, y + 5, {
+            width: anchoDe(i) - 12,
+            align: negrita ? 'left' : alineacion(celda, i),
+          });
       });
       pdf
         .strokeColor(BORDE)
@@ -118,6 +163,11 @@ export class PdfService {
         .stroke();
       pdf.y = y + alto;
     };
+
+    // El encabezado y la primera fila se mantienen juntos (no se parten de página).
+    const altoEncabezado = alturaFila(encabezados, true);
+    const altoPrimera = filas.length ? alturaFila(filas[0], false) : 0;
+    this.saltoSiNecesario(pdf, altoEncabezado + altoPrimera);
 
     dibujarFila(encabezados, true, MARCA);
     filas.forEach((fila, i) => dibujarFila(fila, false, i % 2 === 1 ? '#f8fafc' : undefined));

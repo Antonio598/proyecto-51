@@ -124,6 +124,8 @@ export class ExpedientesService {
       coberturas: dto.coberturas as unknown as Prisma.InputJsonValue,
       deducibles: dto.deducibles as unknown as Prisma.InputJsonValue,
       prima: dto.prima as unknown as Prisma.Decimal,
+      primaActual: dto.primaActual as unknown as Prisma.Decimal,
+      derechosPoliza: dto.derechosPoliza as unknown as Prisma.Decimal,
       condiciones: dto.condiciones,
     };
     // Prisma no admite null en la llave compuesta; buscamos y creamos/actualizamos.

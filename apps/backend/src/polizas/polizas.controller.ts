@@ -8,9 +8,10 @@ import {
   Query,
   Res,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { EstadoPoliza, Rol } from '@prisma/client';
 import { PolizasService } from './polizas.service';
@@ -146,6 +147,29 @@ export class PolizasController {
     @CurrentUser() user: JwtUser,
   ) {
     return this.polizas.marcarEmitida(id, dto, user.userId);
+  }
+
+  /**
+   * Alta de pólizas por lote: sube varios PDF (o una carpeta); la IA los liga por
+   * número de serie a la póliza correcta, captura folio/vigencia/prima y la emite.
+   */
+  @Roles(Rol.captura, Rol.tecnico, Rol.administracion, Rol.admin)
+  @Post('subir-lote')
+  @UseInterceptors(FilesInterceptor('archivos', 50, { limits: { fileSize: 20 * 1024 * 1024 } }))
+  subirLote(
+    @UploadedFiles() archivos: Express.Multer.File[] = [],
+    @Body('clienteId') clienteId: string | undefined,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.polizas.subirLote(
+      (archivos ?? []).map((a) => ({
+        buffer: a.buffer,
+        nombre: a.originalname,
+        mime: a.mimetype,
+      })),
+      { clienteId: clienteId || undefined },
+      user.userId,
+    );
   }
 
   /** Adjunta el PDF de la póliza; Claude sugiere el folio para no re-teclearlo. */

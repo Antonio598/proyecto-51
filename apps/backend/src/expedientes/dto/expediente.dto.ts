@@ -44,13 +44,27 @@ class CoberturasDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) roboTotal: number | null;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) gastosMedicosOcupantes: number | null;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) responsabilidadCivilCarga: number | null;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) accidentesConductor: number | null;
+  @IsOptional() @IsBoolean() asistenciaVial: boolean;
+  @IsOptional() @IsBoolean() danosCarga: boolean;
+  @IsOptional() @IsBoolean() rcCruzada: boolean;
+  @IsOptional() @IsBoolean() asistenciaLegal: boolean;
   @IsOptional() @IsBoolean() asistenciaJuridica: boolean;
   @IsOptional() @IsString() extras: string | null;
 }
 
+class DeduciblePairDto {
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) camion: number | null;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) remolque: number | null;
+}
+
 class DeduciblesDto {
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) danosMateriales: number | null;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) roboTotal: number | null;
+  @IsOptional() @ValidateNested() @Type(() => DeduciblePairDto) danosMateriales?: DeduciblePairDto;
+  @IsOptional() @ValidateNested() @Type(() => DeduciblePairDto) roboTotal?: DeduciblePairDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeduciblePairDto)
+  reduccionAsistencia?: DeduciblePairDto;
 }
 
 /** Captura estructurada (no texto libre) de lo que regresó cada aseguradora. */
@@ -77,6 +91,18 @@ export class PropuestaAseguradoraDto {
   @IsNumber()
   @Min(0)
   prima?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  primaActual?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  derechosPoliza?: number;
 
   @IsOptional()
   @IsString()

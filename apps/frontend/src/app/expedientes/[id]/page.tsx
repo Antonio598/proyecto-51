@@ -12,6 +12,22 @@ const CAMPOS_COBERTURA = [
   { key: 'roboTotal', label: 'Robo total' },
   { key: 'gastosMedicosOcupantes', label: 'Gastos médicos ocupantes' },
   { key: 'responsabilidadCivilCarga', label: 'RC carga transportada' },
+  { key: 'accidentesConductor', label: 'Accidentes al conductor' },
+] as const;
+
+// Coberturas "amparadas" (sí/no).
+const CAMPOS_AMPARADAS = [
+  { key: 'asistenciaVial', label: 'Asistencia vial plus' },
+  { key: 'danosCarga', label: 'Daños a la carga' },
+  { key: 'rcCruzada', label: 'RC cruzada' },
+  { key: 'asistenciaLegal', label: 'Asistencia legal' },
+] as const;
+
+// Deducibles por tipo de unidad (camión/tracto y remolque), en %.
+const CAMPOS_DEDUCIBLE = [
+  { key: 'DanosMateriales', label: 'Deducible daños materiales' },
+  { key: 'RoboTotal', label: 'Deducible robo total' },
+  { key: 'Reduccion', label: 'Reducción por asistencia' },
 ] as const;
 
 const vacia = {
@@ -21,11 +37,22 @@ const vacia = {
   roboTotal: '',
   gastosMedicosOcupantes: '',
   responsabilidadCivilCarga: '',
+  accidentesConductor: '',
+  asistenciaVial: false,
+  danosCarga: false,
+  rcCruzada: false,
+  asistenciaLegal: false,
   asistenciaJuridica: false,
   extras: '',
-  dedDanosMateriales: '',
-  dedRoboTotal: '',
+  dedDanosMaterialesCamion: '',
+  dedDanosMaterialesRemolque: '',
+  dedRoboTotalCamion: '',
+  dedRoboTotalRemolque: '',
+  dedReduccionCamion: '',
+  dedReduccionRemolque: '',
   prima: '',
+  primaActual: '',
+  derechosPoliza: '',
   condiciones: '',
 };
 
@@ -90,14 +117,31 @@ export default function ExpedienteDetallePage() {
           roboTotal: num(form.roboTotal),
           gastosMedicosOcupantes: num(form.gastosMedicosOcupantes),
           responsabilidadCivilCarga: num(form.responsabilidadCivilCarga),
+          accidentesConductor: num(form.accidentesConductor),
+          asistenciaVial: form.asistenciaVial,
+          danosCarga: form.danosCarga,
+          rcCruzada: form.rcCruzada,
+          asistenciaLegal: form.asistenciaLegal,
           asistenciaJuridica: form.asistenciaJuridica,
           extras: form.extras || null,
         },
         deducibles: {
-          danosMateriales: num(form.dedDanosMateriales),
-          roboTotal: num(form.dedRoboTotal),
+          danosMateriales: {
+            camion: num(form.dedDanosMaterialesCamion),
+            remolque: num(form.dedDanosMaterialesRemolque),
+          },
+          roboTotal: {
+            camion: num(form.dedRoboTotalCamion),
+            remolque: num(form.dedRoboTotalRemolque),
+          },
+          reduccionAsistencia: {
+            camion: num(form.dedReduccionCamion),
+            remolque: num(form.dedReduccionRemolque),
+          },
         },
         prima: num(form.prima) ?? undefined,
+        primaActual: num(form.primaActual) ?? undefined,
+        derechosPoliza: num(form.derechosPoliza) ?? undefined,
         condiciones: form.condiciones || undefined,
       });
       setForm({ ...vacia });
@@ -307,13 +351,35 @@ export default function ExpedienteDetallePage() {
                   </button>
                 </div>
               </div>
-              <div className="w-40">
-                <label className="block text-xs font-medium text-slate-600">Prima anual</label>
+              <div className="w-36">
+                <label className="block text-xs font-medium text-slate-600">Prima neta anual</label>
                 <input
                   value={form.prima}
                   onChange={(e) => setForm({ ...form, prima: e.target.value })}
                   className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
                   placeholder="MXN"
+                />
+              </div>
+              <div className="w-36">
+                <label className="block text-xs font-medium text-slate-600">
+                  Derechos de póliza
+                </label>
+                <input
+                  value={form.derechosPoliza}
+                  onChange={(e) => setForm({ ...form, derechosPoliza: e.target.value })}
+                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="MXN"
+                />
+              </div>
+              <div className="w-36">
+                <label className="block text-xs font-medium text-slate-600">
+                  Actual anualizada
+                </label>
+                <input
+                  value={form.primaActual}
+                  onChange={(e) => setForm({ ...form, primaActual: e.target.value })}
+                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Prima vigente"
                 />
               </div>
             </div>
@@ -330,36 +396,51 @@ export default function ExpedienteDetallePage() {
                   />
                 </div>
               ))}
-              <div>
-                <label className="block text-xs font-medium text-slate-600">
-                  Deducible daños (%)
-                </label>
-                <input
-                  value={form.dedDanosMateriales}
-                  onChange={(e) => setForm({ ...form, dedDanosMateriales: e.target.value })}
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600">
-                  Deducible robo (%)
-                </label>
-                <input
-                  value={form.dedRoboTotal}
-                  onChange={(e) => setForm({ ...form, dedRoboTotal: e.target.value })}
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                />
+            </div>
+
+            {/* Deducibles por tipo de unidad (camión/tracto y remolque), en %. */}
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-slate-600">Deducibles (%)</div>
+              <div className="grid gap-3 md:grid-cols-3">
+                {CAMPOS_DEDUCIBLE.map((d) => (
+                  <div key={d.key} className="rounded border border-slate-200 p-2">
+                    <div className="mb-1 text-xs font-medium text-slate-500">{d.label}</div>
+                    <div className="flex gap-2">
+                      <input
+                        value={form[`ded${d.key}Camion` as keyof typeof form] as string}
+                        onChange={(e) =>
+                          setForm({ ...form, [`ded${d.key}Camion`]: e.target.value })
+                        }
+                        className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                        placeholder="Camión %"
+                      />
+                      <input
+                        value={form[`ded${d.key}Remolque` as keyof typeof form] as string}
+                        onChange={(e) =>
+                          setForm({ ...form, [`ded${d.key}Remolque`]: e.target.value })
+                        }
+                        className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                        placeholder="Remolque %"
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.asistenciaJuridica}
-                onChange={(e) => setForm({ ...form, asistenciaJuridica: e.target.checked })}
-              />
-              Incluye asistencia jurídica y vial
-            </label>
+            {/* Coberturas amparadas (sí/no). */}
+            <div className="flex flex-wrap gap-4">
+              {CAMPOS_AMPARADAS.map((c) => (
+                <label key={c.key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form[c.key] as boolean}
+                    onChange={(e) => setForm({ ...form, [c.key]: e.target.checked })}
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>

@@ -161,6 +161,13 @@ export class CobranzaController {
     return this.polizasMadre.marcarPagado(id, user.userId);
   }
 
+  /** Deshace el último "marcar como pagado" de la Madre. */
+  @Roles(Rol.administracion, Rol.admin)
+  @Post('madres/:id/deshacer-pago')
+  deshacerPago(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.polizasMadre.revertirUltimoPago(id, user.userId);
+  }
+
   /** Edita a mano la fecha de vencimiento de una parcialidad. */
   @Roles(Rol.administracion, Rol.tecnico, Rol.admin)
   @Patch('madres/:id/parcialidad/:num/vencimiento')

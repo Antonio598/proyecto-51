@@ -146,6 +146,23 @@ export default function MadreDetallePage() {
     }
   }
 
+  async function deshacerPago() {
+    if (!confirm('¿Deshacer el último pago marcado? La parcialidad volverá a quedar pendiente.'))
+      return;
+    setOcupado(true);
+    setError('');
+    setMensaje('');
+    try {
+      const res = await api.deshacerPagoMadre(id);
+      setMensaje(`Se deshizo el pago de la parcialidad ${res.revertida}.`);
+      await cargar();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error');
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   if (error && !madre)
     return <div className="rounded bg-red-50 px-3 py-2 text-red-700">{error}</div>;
   if (!madre) return <div className="text-slate-400">Cargando…</div>;
@@ -155,6 +172,7 @@ export default function MadreDetallePage() {
     (madre.cortes ?? []).map((c: any) => [c.numeroParcialidad, c]),
   );
   const abierta = (madre.cortes ?? []).find((c: any) => c.estado !== 'pagado');
+  const hayPagadas = (madre.cortes ?? []).some((c: any) => c.estado === 'pagado');
 
   return (
     <div className="space-y-6">
@@ -270,19 +288,38 @@ export default function MadreDetallePage() {
           )}
         </div>
 
-        {abierta && (
-          <div className="flex items-center justify-between rounded border border-marca/40 bg-marca/5 px-3 py-2 text-sm">
+        {(abierta || hayPagadas) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-marca/40 bg-marca/5 px-3 py-2 text-sm">
             <div>
-              Parcialidad vigente: <strong>#{abierta.numeroParcialidad}</strong> ·{' '}
-              {mxn(abierta.montoEsperado)} · vence {fecha(abierta.fechaVencimiento)}
+              {abierta ? (
+                <>
+                  Parcialidad vigente: <strong>#{abierta.numeroParcialidad}</strong> ·{' '}
+                  {mxn(abierta.montoEsperado)} · vence {fecha(abierta.fechaVencimiento)}
+                </>
+              ) : (
+                'Plan saldado.'
+              )}
             </div>
-            <button
-              onClick={marcarPagado}
-              disabled={ocupado}
-              className="rounded bg-green-700 px-4 py-2 text-xs text-white disabled:opacity-50"
-            >
-              Marcar como pagado
-            </button>
+            <div className="flex items-center gap-2">
+              {abierta && (
+                <button
+                  onClick={marcarPagado}
+                  disabled={ocupado}
+                  className="rounded bg-green-700 px-4 py-2 text-xs text-white disabled:opacity-50"
+                >
+                  Marcar como pagado
+                </button>
+              )}
+              {hayPagadas && (
+                <button
+                  onClick={deshacerPago}
+                  disabled={ocupado}
+                  className="rounded border border-slate-300 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Deshacer último pago
+                </button>
+              )}
+            </div>
           </div>
         )}
       </section>

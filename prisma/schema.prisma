@@ -346,6 +346,10 @@ model PropuestaAseguradora {
   aseguradora   Aseguradora @relation(fields: [aseguradoraId], references: [id])
   coberturas    Json        // estructurado, no texto libre
   prima         Decimal?    @db.Decimal(14, 2)
+  // ACTUAL ANUALIZADA: prima vigente/anterior, para comparar contra la oferta.
+  primaActual   Decimal?    @db.Decimal(14, 2)
+  // Derechos de póliza (gastos de expedición) de esta oferta.
+  derechosPoliza Decimal?   @db.Decimal(14, 2)
   deducibles    Json?
   condiciones   String?
   siniestralidad String?    // dato aportado por el cliente

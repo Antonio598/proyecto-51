@@ -12,14 +12,10 @@ import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
 import { ClaudeService, UnidadExtraida } from '../ia/claude.service';
 import { normalizarRfc } from '../clientes/rfc.util';
+import { normalizarSerie } from '../common/serie.util';
 
 /** Debajo de este umbral, el campo se marca para revisión humana obligatoria. */
 export const UMBRAL_CONFIANZA = 0.8;
-
-/** Normaliza un VIN/serie para comparar: mayúsculas, sin espacios ni guiones. */
-export function normalizarSerie(s: string | null | undefined): string {
-  return (s ?? '').replace(/[\s-]/g, '').toUpperCase();
-}
 
 /** Un valor "vacío" a efectos de fusión: sin dato o el default booleano/falso. */
 function esVacio(v: unknown): boolean {
@@ -474,13 +470,19 @@ export class DocumentosService {
       where: { clienteId },
       select: { id: true, vin: true, numeroEconomico: true, folio: true },
     });
+    // Se indexa con claves NORMALIZADAS (mayúsculas, sin espacios/guiones) para que
+    // un mismo VIN/económico ya registrado haga match aunque venga con distinto
+    // formato en el documento nuevo, y así se actualice en vez de duplicarse.
     const porVin = new Map<string, string>();
     const porEco = new Map<string, string>();
     const porFolio = new Map<string, string>();
     for (const e of existentes) {
-      if (e.vin) porVin.set(e.vin, e.id);
-      if (e.numeroEconomico) porEco.set(e.numeroEconomico, e.id);
-      if (e.folio) porFolio.set(e.folio, e.id);
+      const vinN = normalizarSerie(e.vin);
+      const ecoN = (e.numeroEconomico ?? '').trim().toUpperCase();
+      const folN = (e.folio ?? '').trim().toUpperCase();
+      if (vinN) porVin.set(vinN, e.id);
+      if (ecoN) porEco.set(ecoN, e.id);
+      if (folN) porFolio.set(folN, e.id);
     }
 
     // 3. Repartir en "crear" (createMany) y "actualizar".
@@ -517,9 +519,9 @@ export class DocumentosService {
     // el mismo número de serie (red de seguridad si la revisión trae duplicados).
     const nuevaPorVin = new Map<string, number>();
     for (const u of unidadesCorregidas) {
-      const vin = u.vin?.trim();
-      const eco = u.numeroEconomico?.trim();
-      const fol = u.folio?.trim();
+      const vin = normalizarSerie(u.vin);
+      const eco = (u.numeroEconomico ?? '').trim().toUpperCase();
+      const fol = (u.folio ?? '').trim().toUpperCase();
       const existenteId =
         (vin && porVin.get(vin)) || (eco && porEco.get(eco)) || (fol && porFolio.get(fol)) || null;
       const datos = datosDe(u);

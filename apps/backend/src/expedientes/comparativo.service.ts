@@ -9,9 +9,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { PdfService } from '../generacion/pdf.service';
-import { ExcelService } from '../generacion/excel.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { AuditService } from '../audit/audit.service';
+import { construirComparativoExcel, OfertaComparativo } from '../generacion/comparativo-excel';
+import { calcularEsquemas } from './esquemas-pago';
 import {
   Coberturas,
   Deducibles,
@@ -38,7 +39,6 @@ export class ComparativoService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly pdf: PdfService,
-    private readonly excel: ExcelService,
     private readonly notificaciones: NotificacionesService,
     private readonly audit: AuditService,
   ) {}
@@ -85,7 +85,41 @@ export class ComparativoService {
     const tabla = this.construirTabla(propuestas);
     const nombreBase = `comparativo-${expediente.folioInterno}`;
 
-    // 1. Exportar a PDF y Excel.
+    // Unidades de esta flota (para #UND y la hoja PARQUE).
+    const unidades = expediente.cliente.unidades.filter(
+      (u) => (flotaId ?? null) === null || u.flotaId === flotaId,
+    );
+
+    // Ofertas con sus esquemas de pago calculados (contado/semestral/…).
+    const ofertas: OfertaComparativo[] = propuestas.map((p) => {
+      const prima = p.prima ? Number(p.prima) : null;
+      const derechos = p.derechosPoliza ? Number(p.derechosPoliza) : null;
+      return {
+        nombre: p.aseguradora.nombre,
+        prima,
+        primaActual: p.primaActual ? Number(p.primaActual) : null,
+        derechos,
+        coberturas: p.coberturas as Coberturas | null,
+        deducibles: p.deducibles as Deducibles | null,
+        esquemas: calcularEsquemas(prima, derechos),
+      };
+    });
+
+    // Tabla de esquemas de pago para el PDF (misma info que la hoja RESUMEN).
+    const tablaPagos = {
+      encabezados: ['Esquema de pago', ...ofertas.map((o) => o.nombre)],
+      filas: [
+        ['Prima total de contado', ...ofertas.map((o) => formatearMoneda(o.esquemas.totalContado))],
+        ['1er pago semestral', ...ofertas.map((o) => formatearMoneda(o.esquemas.semestral.primerPago))],
+        ['Subsecuente semestral', ...ofertas.map((o) => formatearMoneda(o.esquemas.semestral.subsecuente))],
+        ['1er pago trimestral', ...ofertas.map((o) => formatearMoneda(o.esquemas.trimestral.primerPago))],
+        ['Subsecuente trimestral', ...ofertas.map((o) => formatearMoneda(o.esquemas.trimestral.subsecuente))],
+        ['1er pago mensual', ...ofertas.map((o) => formatearMoneda(o.esquemas.mensual.primerPago))],
+        ['Subsecuente mensual', ...ofertas.map((o) => formatearMoneda(o.esquemas.mensual.subsecuente))],
+      ],
+    };
+
+    // 1. Exportar a PDF y Excel (Excel con el formato del despacho).
     const [pdfBuffer, excelBuffer] = await Promise.all([
       this.pdf.generar({
         titulo: 'Cuadro comparativo de propuestas',
@@ -95,6 +129,7 @@ export class ComparativoService {
             ? [{ titulo: 'Siniestralidad reportada', parrafos: [expediente.siniestralidad] }]
             : []),
           { titulo: 'Comparativo de coberturas', tabla },
+          { titulo: 'Esquemas de pago', tabla: tablaPagos },
           {
             titulo: 'Condiciones particulares',
             parrafos: propuestas.map(
@@ -104,14 +139,19 @@ export class ComparativoService {
         ],
         piePagina: expediente.cliente.razonSocial,
       }),
-      this.excel.generar([
-        {
-          nombre: 'Comparativo',
-          titulo: `Comparativo — ${expediente.cliente.razonSocial}`,
-          encabezados: tabla.encabezados,
-          filas: tabla.filas,
-        },
-      ]),
+      construirComparativoExcel({
+        cliente: expediente.cliente.razonSocial,
+        folio: expediente.folioInterno,
+        unidades: unidades.map((u) => ({
+          tipo: u.tipo,
+          marca: u.marca,
+          modelo: u.modelo,
+          anio: u.anio,
+          vin: u.vin,
+          valorAsegurado: u.valorAsegurado ? Number(u.valorAsegurado) : null,
+        })),
+        ofertas,
+      }),
     ]);
 
     // 2. Guardar ambos como documentos del expediente.
@@ -179,7 +219,7 @@ export class ComparativoService {
     const expediente = await this.prisma.expediente.findUnique({
       where: { id: expedienteId },
       include: {
-        cliente: true,
+        cliente: { include: { unidades: { where: { activo: true } } } },
         propuestasAseguradora: {
           include: { aseguradora: true },
           orderBy: { createdAt: 'asc' },
